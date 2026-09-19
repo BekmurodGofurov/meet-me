@@ -3,6 +3,10 @@ import crypto from 'crypto';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:https';
 
+const MAX_ROOM_SIZE = 6;
+const MAX_NAME_LENGTH = 24;
+
+// Map<roomId, Map<clientId, { ws, name }>>
 const rooms = new Map();
 
 // Same mkcert certificate the client dev server uses, so the browser trusts
@@ -28,101 +32,128 @@ httpsServer.listen(8080, () => {
   console.log('Server is running on wss://localhost:8080');
 });
 
+const cleanName = (value) => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed.slice(0, MAX_NAME_LENGTH) || 'Guest';
+};
+
+const roster = (roomClients, excludeId) =>
+  Array.from(roomClients.entries())
+    .filter(([clientId]) => clientId !== excludeId)
+    .map(([clientId, member]) => ({ clientId, name: member.name }));
+
 wss.on('connection', (ws) => {
   const clientId = crypto.randomUUID();
-  let currentRoomId = null; 
-  
+  let currentRoomId = null;
+
   console.log(`Client connected: ${clientId}`);
+
+  const send = (payload) => ws.send(JSON.stringify(payload));
 
   ws.on('message', (message) => {
     try {
       const parsedData = JSON.parse(message);
-      
+
       if (parsedData.type === 'create-room') {
         const roomId = crypto.randomUUID().slice(0, 6);
-        
+        const name = cleanName(parsedData.name);
+
         const roomClients = new Map();
-        roomClients.set(clientId, ws);
+        roomClients.set(clientId, { ws, name });
         rooms.set(roomId, roomClients);
-        
+
         currentRoomId = roomId;
 
-        console.log(`Room created: ${roomId} by client: ${clientId}`);
+        console.log(`Room created: ${roomId} by ${name} (${clientId})`);
 
-        ws.send(JSON.stringify({
-          type: 'room-created',
-          roomId: roomId,
-          clientId: clientId
-        }));
-      } 
+        send({ type: 'room-created', roomId, clientId, name });
+      }
+
       else if (parsedData.type === 'join-room') {
         const roomId = parsedData.roomId;
+        const name = cleanName(parsedData.name);
 
         if (!rooms.has(roomId)) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room does not exist' }));
+          send({ type: 'error', message: 'Room does not exist' });
           return;
         }
 
         const roomClients = rooms.get(roomId);
 
-        if (roomClients.size >= 6) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
+        if (roomClients.size >= MAX_ROOM_SIZE) {
+          send({ type: 'error', message: 'Room is full' });
           return;
         }
-        
-        const existingPeers = Array.from(roomClients.keys());
-        
-        roomClients.set(clientId, ws);
+
+        const existingPeers = roster(roomClients, clientId);
+
+        roomClients.set(clientId, { ws, name });
         currentRoomId = roomId;
 
-        console.log(`Client ${clientId} joined room ${roomId}`);
+        console.log(`${name} (${clientId}) joined room ${roomId}`);
 
-        ws.send(JSON.stringify({
-          type: 'existing-peers',
-          peers: existingPeers,
-          clientId: clientId 
-        }));
+        send({ type: 'existing-peers', roomId, clientId, name, peers: existingPeers });
 
-        existingPeers.forEach(peerId => {
-          const peerWs = roomClients.get(peerId);
-          peerWs.send(JSON.stringify({
-            type: 'peer-joined',
-            clientId: clientId 
-          }));
+        existingPeers.forEach((peer) => {
+          roomClients.get(peer.clientId).ws.send(
+            JSON.stringify({ type: 'peer-joined', clientId, name }),
+          );
         });
-      } 
+      }
+
       else if (['offer', 'answer', 'ice-candidate'].includes(parsedData.type)) {
         if (currentRoomId && rooms.has(currentRoomId)) {
           const roomClients = rooms.get(currentRoomId);
-          if (roomClients.has(parsedData.targetId)) {
-            const targetWs = roomClients.get(parsedData.targetId);
-            
-            // FIX: Server enforces the senderId
-            targetWs.send(JSON.stringify({
-              ...parsedData,
-              senderId: clientId
-            }));
+          const target = roomClients.get(parsedData.targetId);
+
+          if (target) {
+            // The server knows who is on this connection, so it stamps the
+            // sender itself rather than trusting the client's own claim.
+            target.ws.send(JSON.stringify({ ...parsedData, senderId: clientId }));
           }
         }
-      } 
-      else if (parsedData.type === 'chat-message') {
+      }
+
+      else if (parsedData.type === 'media-state') {
         if (currentRoomId && rooms.has(currentRoomId)) {
           const roomClients = rooms.get(currentRoomId);
-          roomClients.forEach((peerWs, peerId) => {
-            if (peerId !== clientId) { 
-              
-              // FIX: Server enforces the from ID
-              peerWs.send(JSON.stringify({
-                ...parsedData,
-                from: clientId
-              }));
+
+          roomClients.forEach((member, peerId) => {
+            if (peerId !== clientId) {
+              member.ws.send(
+                JSON.stringify({
+                  type: 'media-state',
+                  from: clientId,
+                  cameraOn: Boolean(parsedData.cameraOn),
+                  micOn: Boolean(parsedData.micOn),
+                }),
+              );
             }
           });
         }
       }
-      
+
+      else if (parsedData.type === 'chat-message') {
+        if (currentRoomId && rooms.has(currentRoomId)) {
+          const roomClients = rooms.get(currentRoomId);
+          const sender = roomClients.get(clientId);
+
+          roomClients.forEach((member, peerId) => {
+            if (peerId !== clientId) {
+              member.ws.send(
+                JSON.stringify({
+                  ...parsedData,
+                  from: clientId,
+                  fromName: sender?.name ?? 'Guest',
+                }),
+              );
+            }
+          });
+        }
+      }
+
     } catch (err) {
-      console.log("Ignored invalid JSON message.");
+      console.log('Ignored invalid JSON message.');
     }
   });
 
@@ -137,11 +168,8 @@ wss.on('connection', (ws) => {
         rooms.delete(currentRoomId);
         console.log(`Room ${currentRoomId} deleted (empty)`);
       } else {
-        roomClients.forEach((peerWs) => {
-          peerWs.send(JSON.stringify({
-            type: 'peer-left',
-            clientId: clientId 
-          }));
+        roomClients.forEach((member) => {
+          member.ws.send(JSON.stringify({ type: 'peer-left', clientId }));
         });
       }
     }

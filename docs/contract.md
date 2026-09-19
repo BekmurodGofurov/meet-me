@@ -22,10 +22,12 @@ stops existing once its member Map is empty, no explicit action needed.
 
 **Payload:**
 ```json
-{ "type": "create-room" }
+{ "type": "create-room", "name": "Bekmurod" }
 ```
-No fields needed — the server is the one who invents the room code and
-the client's ID, not the browser.
+`name` is the display name the user typed in the lobby. The server still
+invents the room code and the client's ID — the browser only supplies the
+name. The server trims it, caps it at 24 characters, and falls back to
+"Guest" if it's empty, so no client can inject an oversized or blank name.
 
 **Server behavior:** Generates a new unique `roomId`, generates a new
 unique `clientId` for this connection, creates an entry for the room in
@@ -42,8 +44,10 @@ Responds with `room-created` (see below).
 
 **Payload:**
 ```json
-{ "type": "room-created", "roomId": "X7K2P9", "clientId": "c-1a2b3c" }
+{ "type": "room-created", "roomId": "X7K2P9", "clientId": "c-1a2b3c", "name": "Bekmurod" }
 ```
+`name` is echoed back as the server actually stored it (after trimming and
+capping), so the client displays the same value everyone else sees.
 
 **Browser behavior:** Displays the `roomId` to the user so they can
 share it, and stores its own `clientId` for use in all future messages
@@ -59,7 +63,7 @@ share it, and stores its own `clientId` for use in all future messages
 
 **Payload:**
 ```json
-{ "type": "join-room", "roomId": "X7K2P9" }
+{ "type": "join-room", "roomId": "X7K2P9", "name": "Aziz" }
 ```
 
 **Server behavior:** Looks up `roomId` in the Map. If it doesn't exist,
@@ -80,11 +84,25 @@ path — whoever just got added to the room)
 
 **Payload:**
 ```json
-{ "type": "existing-peers", "clientId": "c-9f8e7d", "peers": ["c-1a2b3c", "c-4d5e6f"] }
+{
+  "type": "existing-peers",
+  "roomId": "X7K2P9",
+  "clientId": "c-9f8e7d",
+  "name": "Aziz",
+  "peers": [
+    { "clientId": "c-1a2b3c", "name": "Bekmurod" },
+    { "clientId": "c-4d5e6f", "name": "Kamila" }
+  ]
+}
 ```
-`clientId` here is the new client's own ID (same purpose as in
-`room-created` — for `join-room` this is where they first learn it,
-since `join-room` itself doesn't return one directly).
+`clientId` and `name` here are the new client's own (same purpose as in
+`room-created` — for `join-room` this is where they first learn them,
+since `join-room` itself doesn't return them directly). `roomId` is echoed
+so the client doesn't have to remember what it asked to join.
+
+`peers` is a list of objects rather than bare ID strings, because the UI
+labels every video tile with a name and would otherwise have no way to
+map an ID to a person.
 
 **Browser behavior:** For each ID in `peers`, this client will initiate
 a WebRTC `offer` (see below) — this is what kicks off the mesh
@@ -101,7 +119,7 @@ client — they get `existing-peers` instead)
 
 **Payload:**
 ```json
-{ "type": "peer-joined", "clientId": "c-9f8e7d" }
+{ "type": "peer-joined", "clientId": "c-9f8e7d", "name": "Aziz" }
 ```
 
 **Browser behavior:** Adds a placeholder video tile for this new peer
@@ -162,7 +180,30 @@ connection toward becoming live audio/video.
 
 ---
 
-## 8. `chat-message`
+## 8. `media-state`
+
+**Direction:** Browser → Server → broadcast to every other client in the
+same room
+
+**When:** Someone turns their camera or microphone on or off, and also
+right after joining and whenever a new peer joins (so the newcomer and
+the existing members learn each other's current state).
+
+**Payload:**
+```json
+{ "type": "media-state", "from": "c-9f8e7d", "cameraOn": false, "micOn": true }
+```
+`from` is stamped by the server, like `chat-message`.
+
+**Why this exists:** turning a camera off stops the media, but the
+receiving `<video>` element keeps painting the last frame it got, so the
+peer appears frozen rather than gone. There is no reliable "camera is
+off" signal in the media itself, so it is sent explicitly and the UI
+shows a placeholder instead.
+
+---
+
+## 9. `chat-message`
 
 **Direction:** Browser → Server → broadcast to every other client in
 the same room
@@ -171,10 +212,11 @@ the same room
 
 **Payload:**
 ```json
-{ "type": "chat-message", "from": "c-9f8e7d", "text": "hey, can everyone hear me?" }
+{ "type": "chat-message", "from": "c-9f8e7d", "fromName": "Aziz", "text": "hey, can everyone hear me?" }
 ```
 No `targetId` — unlike offer/answer/ICE, chat is one-to-everyone in the
-room, not one-to-one.
+room, not one-to-one. `from` and `fromName` are both filled in by the
+server from the sending connection, never trusted from the client.
 
 **Server behavior:** Looks up the sender's room, sends this message to
 every other member's connection.
