@@ -68,6 +68,42 @@
   width: 100%;
 }
 
+.join-hint {
+  color: #d9a441;
+  margin: 0;
+  width: 100%;
+  font-size: 14px;
+}
+
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 900px;
+
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.video-tile {
+  margin: 0;
+
+  video {
+    width: 100%;
+    background: #222;
+    border-radius: 8px;
+    display: block;
+  }
+
+  figcaption {
+    font-size: 13px;
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+  }
+}
+
 .room-panel {
   margin-bottom: 20px;
   text-align: center;
