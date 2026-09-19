@@ -3,10 +3,35 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   padding: 16px;
   text-align: center;
+  box-sizing: border-box;
+}
+
+button {
+  font-size: 16px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #6b4de6;
+  color: #fff;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+input {
+  font-size: 16px; // below 16px iOS Safari zooms the page on focus
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  width: 100%;
   box-sizing: border-box;
 }
 
@@ -26,61 +51,147 @@
   }
 }
 
-.join-panel {
+.lobby {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 320px;
+
+  h2 {
+    margin: 0;
+  }
+
+  &__hint {
+    margin: -4px 0 4px;
+    font-size: 13px;
+    opacity: 0.7;
+  }
+
+  &__error {
+    margin: 0;
+    color: #e05555;
+  }
+
+  .is-secondary {
+    background: #3a3a48;
+  }
+
+  .is-link {
+    background: none;
+    color: inherit;
+    opacity: 0.7;
+    font-size: 14px;
+    padding: 4px;
+  }
+}
+
+.code-input {
+  display: flex;
+  gap: 8px;
   justify-content: center;
 
-  button,
   input {
-    font-size: 16px; // prevents iOS Safari from auto-zooming on focus
-    padding: 10px 16px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
+    width: 44px;
+    height: 52px;
+    padding: 0;
+    text-align: center;
+    font-size: 22px;
+    text-transform: lowercase;
+    background: #2a2c36;
+    border: 2px solid transparent;
+    border-radius: 10px;
+
+    &:focus {
+      outline: none;
+      border-color: #4caf7d;
+    }
+
+    &.is-filled {
+      border-color: #4a4d5c;
+    }
   }
 
-  button {
-    background: var(--accent, #6b4de6);
-    color: #fff;
-    border: none;
-    cursor: pointer;
-  }
+  @media (max-width: 380px) {
+    gap: 6px;
 
-  @media (max-width: 480px) {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-    max-width: 320px;
-
-    button,
     input {
-      width: 100%;
+      width: 38px;
+      height: 46px;
+      font-size: 18px;
     }
   }
 }
 
-.join-error {
-  color: #e05555;
-  margin: 0;
+.room {
   width: 100%;
+  max-width: 900px;
+
+  &__header {
+    margin-bottom: 16px;
+
+    h2 {
+      margin: 0 0 4px;
+    }
+
+    p {
+      margin: 0;
+      font-size: 14px;
+      opacity: 0.8;
+    }
+  }
+
+  &__roster {
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+  }
 }
 
-.join-hint {
-  color: #d9a441;
-  margin: 0;
-  width: 100%;
-  font-size: 14px;
+.media-controls {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+
+  &__error {
+    width: 100%;
+    margin: 0;
+    color: #e05555;
+    font-size: 14px;
+  }
+}
+
+.icon-button {
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  transition: background 0.15s, border-color 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  // "On" is the quiet state; off is highlighted, so a muted mic or a stopped
+  // camera is the thing that stands out.
+  &:not(.is-on) {
+    background: #e05555;
+    border-color: #e05555;
+  }
 }
 
 .video-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
   width: 100%;
-  max-width: 900px;
 
   @media (max-width: 480px) {
     grid-template-columns: 1fr;
@@ -90,26 +201,41 @@
 .video-tile {
   margin: 0;
 
-  video {
+  &__frame {
+    position: relative;
     width: 100%;
+    aspect-ratio: 4 / 3;
     background: #222;
     border-radius: 8px;
+    overflow: hidden;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
     display: block;
+    object-fit: cover;
+
+    &.is-hidden {
+      // Hidden rather than unmounted: the element still carries the audio.
+      visibility: hidden;
+    }
+  }
+
+  &__placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    color: #9aa0a6;
+    background: #222;
   }
 
   figcaption {
     font-size: 13px;
     margin-top: 4px;
     overflow-wrap: anywhere;
-  }
-}
-
-.room-panel {
-  margin-bottom: 20px;
-  text-align: center;
-
-  p {
-    overflow-wrap: anywhere; // long clientId strings shouldn't overflow on narrow screens
-    max-width: 100%;
   }
 }
