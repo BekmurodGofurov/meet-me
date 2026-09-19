@@ -1,10 +1,32 @@
 import { WebSocketServer } from 'ws';
-import crypto from 'crypto'; 
+import crypto from 'crypto';
+import { readFileSync } from 'node:fs';
+import { createServer } from 'node:https';
 
 const rooms = new Map();
 
-const wss = new WebSocketServer({ port: 8080 });
-console.log("Server is running on ws://localhost:8080");
+// Same mkcert certificate the client dev server uses, so the browser trusts
+// both. Needed because a page loaded over https can't open a plain ws://
+// connection (browsers block it as mixed content) - it must be wss://.
+const httpsServer = createServer(
+  {
+    key: readFileSync(new URL('../client/certs/192.168.1.3+1-key.pem', import.meta.url)),
+    cert: readFileSync(new URL('../client/certs/192.168.1.3+1.pem', import.meta.url)),
+  },
+  // Plain page response so visiting this address in a browser shows something.
+  // Without it a browser request hangs forever, which makes it impossible to
+  // tell a certificate problem apart from "no handler".
+  (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Signaling server OK');
+  },
+);
+
+const wss = new WebSocketServer({ server: httpsServer });
+
+httpsServer.listen(8080, () => {
+  console.log('Server is running on wss://localhost:8080');
+});
 
 wss.on('connection', (ws) => {
   const clientId = crypto.randomUUID();

@@ -5,4 +5,75 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  padding: 16px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.connection-status {
+  font-size: 14px;
+  margin: 0 0 12px;
+
+  &--connecting {
+    color: #d9a441;
+  }
+  &--connected {
+    color: #4caf7d;
+  }
+  &--error,
+  &--closed {
+    color: #e05555;
+  }
+}
+
+.join-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+
+  button,
+  input {
+    font-size: 16px; // prevents iOS Safari from auto-zooming on focus
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  button {
+    background: var(--accent, #6b4de6);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+  }
+
+  @media (max-width: 480px) {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 320px;
+
+    button,
+    input {
+      width: 100%;
+    }
+  }
+}
+
+.join-error {
+  color: #e05555;
+  margin: 0;
+  width: 100%;
+}
+
+.room-panel {
+  margin-bottom: 20px;
+  text-align: center;
+
+  p {
+    overflow-wrap: anywhere; // long clientId strings shouldn't overflow on narrow screens
+    max-width: 100%;
+  }
 }
