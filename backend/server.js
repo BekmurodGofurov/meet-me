@@ -50,6 +50,27 @@ wss.on('connection', (ws) => {
 
   const send = (payload) => ws.send(JSON.stringify(payload));
 
+  // Shared by an explicit leave-room and a real disconnect: without this the
+  // server would keep thinking this client is in the room until the socket
+  // itself closes, which never happens for an explicit leave (the connection
+  // stays open so the same client can create/join another room next).
+  const leaveCurrentRoom = () => {
+    if (currentRoomId && rooms.has(currentRoomId)) {
+      const roomClients = rooms.get(currentRoomId);
+      roomClients.delete(clientId);
+
+      if (roomClients.size === 0) {
+        rooms.delete(currentRoomId);
+        console.log(`Room ${currentRoomId} deleted (empty)`);
+      } else {
+        roomClients.forEach((member) => {
+          member.ws.send(JSON.stringify({ type: 'peer-left', clientId }));
+        });
+      }
+    }
+    currentRoomId = null;
+  };
+
   ws.on('message', (message) => {
     try {
       const parsedData = JSON.parse(message);
@@ -133,6 +154,10 @@ wss.on('connection', (ws) => {
         }
       }
 
+      else if (parsedData.type === 'leave-room') {
+        leaveCurrentRoom();
+      }
+
       else if (parsedData.type === 'chat-message') {
         if (currentRoomId && rooms.has(currentRoomId)) {
           const roomClients = rooms.get(currentRoomId);
@@ -159,19 +184,6 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     console.log(`Client disconnected: ${clientId}`);
-
-    if (currentRoomId && rooms.has(currentRoomId)) {
-      const roomClients = rooms.get(currentRoomId);
-      roomClients.delete(clientId);
-
-      if (roomClients.size === 0) {
-        rooms.delete(currentRoomId);
-        console.log(`Room ${currentRoomId} deleted (empty)`);
-      } else {
-        roomClients.forEach((member) => {
-          member.ws.send(JSON.stringify({ type: 'peer-left', clientId }));
-        });
-      }
-    }
+    leaveCurrentRoom();
   });
 });

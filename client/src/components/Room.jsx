@@ -9,6 +9,7 @@ export default function Room({
   remoteStreams,
   remoteMedia,
   media,
+  onLeave,
 }) {
   const nameFor = (clientId) =>
     participants.find((p) => p.clientId === clientId)?.name ?? 'Guest'
@@ -28,6 +29,7 @@ export default function Room({
         micOn={media.micOn}
         onToggleCamera={media.toggleCamera}
         onToggleMic={media.toggleMic}
+        onLeave={onLeave}
         error={media.mediaError}
       />
 

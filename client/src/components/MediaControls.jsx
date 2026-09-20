@@ -1,6 +1,13 @@
-import { CameraIcon, MicIcon } from './icons'
+import { CameraIcon, LeaveIcon, MicIcon } from './icons'
 
-export default function MediaControls({ cameraOn, micOn, onToggleCamera, onToggleMic, error }) {
+export default function MediaControls({
+  cameraOn,
+  micOn,
+  onToggleCamera,
+  onToggleMic,
+  onLeave,
+  error,
+}) {
   return (
     <div className="media-controls">
       <button
@@ -21,6 +28,15 @@ export default function MediaControls({ cameraOn, micOn, onToggleCamera, onToggl
         title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
       >
         <CameraIcon off={!cameraOn} />
+      </button>
+
+      <button
+        className="icon-button icon-button--leave"
+        onClick={onLeave}
+        aria-label="Leave room"
+        title="Leave room"
+      >
+        <LeaveIcon />
       </button>
 
       {error && <p className="media-controls__error">{error}</p>}

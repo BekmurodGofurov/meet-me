@@ -29,3 +29,15 @@ export function CameraIcon({ off = false }) {
     </svg>
   )
 }
+
+export function LeaveIcon() {
+  // Rotated phone-hangup glyph, the universal "end call" symbol.
+  return (
+    <svg {...base} aria-hidden="true" transform="rotate(135)">
+      <path d="M3 12c5-4 13-4 18 0" />
+      <path d="M8 12.5 6 15" />
+      <path d="M16 12.5 18 15" />
+      <circle cx="12" cy="13.5" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}

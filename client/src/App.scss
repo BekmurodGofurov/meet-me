@@ -180,11 +180,25 @@ input {
   }
 
   // "On" is the quiet state; off is highlighted, so a muted mic or a stopped
-  // camera is the thing that stands out.
+  // camera is the thing that stands out. This also covers --leave below,
+  // which never gets .is-on and so is always shown in this red state.
   &:not(.is-on) {
     background: #e05555;
     border-color: #e05555;
   }
+
+  &--leave {
+    margin-left: 10px;
+
+    &:hover {
+      background: #c23f3f;
+    }
+  }
+}
+
+.rejoining {
+  opacity: 0.8;
+  font-size: 15px;
 }
 
 .video-grid {

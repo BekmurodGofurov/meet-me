@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { clearSession, loadName, loadSession, saveSession } from '../session'
 
 const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
@@ -16,6 +17,9 @@ export default function useRoom(tracksRef) {
   const remoteStreamsRef = useRef(new Map())
   const myIdRef = useRef(null)
   const mediaStateRef = useRef({ cameraOn: false, micOn: false })
+  // Read once, before the connect effect runs, so it's available the instant
+  // the socket opens rather than racing a state update.
+  const storedSessionRef = useRef(loadSession())
 
   const [connectionStatus, setConnectionStatus] = useState('connecting')
   const [currentRoom, setCurrentRoom] = useState(null)
@@ -24,6 +28,12 @@ export default function useRoom(tracksRef) {
   const [remoteStreams, setRemoteStreams] = useState({})
   const [remoteMedia, setRemoteMedia] = useState({})
   const [roomError, setRoomError] = useState('')
+  const [rejoining, setRejoining] = useState(() => Boolean(storedSessionRef.current))
+  // Falls back to the standalone remembered name (survives leaving a room)
+  // when there's no active session to rejoin.
+  const [rememberedName, setRememberedName] = useState(
+    () => storedSessionRef.current?.name ?? loadName(),
+  )
 
   const send = useCallback((message) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -139,7 +149,14 @@ export default function useRoom(tracksRef) {
       }
     }
 
-    socket.onopen = () => setConnectionStatus('connected')
+    socket.onopen = () => {
+      setConnectionStatus('connected')
+
+      const stored = storedSessionRef.current
+      if (stored) {
+        post({ type: 'join-room', roomId: stored.roomId, name: stored.name })
+      }
+    }
     socket.onerror = () => setConnectionStatus('error')
     socket.onclose = () => setConnectionStatus('closed')
 
@@ -153,6 +170,9 @@ export default function useRoom(tracksRef) {
             setMe({ clientId: data.clientId, name: data.name })
             setCurrentRoom(data.roomId)
             setParticipants([])
+            setRejoining(false)
+            setRememberedName(data.name)
+            saveSession(data.roomId, data.name)
             break
 
           case 'existing-peers': {
@@ -160,6 +180,9 @@ export default function useRoom(tracksRef) {
             setMe({ clientId: data.clientId, name: data.name })
             setParticipants(data.peers)
             setCurrentRoom(data.roomId)
+            setRejoining(false)
+            setRememberedName(data.name)
+            saveSession(data.roomId, data.name)
 
             // Creating the connection is enough - onnegotiationneeded fires and
             // sends the offer.
@@ -205,6 +228,14 @@ export default function useRoom(tracksRef) {
             break
 
           case 'error':
+            // The stored room may no longer exist (server restarted, or
+            // everyone else already left and it was cleaned up) - fall back
+            // to the normal lobby instead of retrying forever.
+            if (storedSessionRef.current) {
+              clearSession()
+              storedSessionRef.current = null
+              setRejoining(false)
+            }
             setRoomError(data.message)
             break
 
@@ -291,6 +322,27 @@ export default function useRoom(tracksRef) {
     [send],
   )
 
+  const leaveRoom = useCallback(() => {
+    clearSession()
+    storedSessionRef.current = null
+
+    peersRef.current.forEach((peer) => peer.pc.close())
+    peersRef.current.clear()
+    remoteStreamsRef.current.clear()
+
+    // Tell the server explicitly - the socket itself stays open so this
+    // connection can create/join another room next, which means the server
+    // has no other way to learn this room was left.
+    send({ type: 'leave-room' })
+
+    setCurrentRoom(null)
+    setMe(null)
+    setParticipants([])
+    setRemoteStreams({})
+    setRemoteMedia({})
+    setRoomError('')
+  }, [send])
+
   return {
     connectionStatus,
     currentRoom,
@@ -299,8 +351,11 @@ export default function useRoom(tracksRef) {
     remoteStreams,
     remoteMedia,
     roomError,
+    rejoining,
+    rememberedName,
     publishTrack,
     createRoom,
     joinRoom,
+    leaveRoom,
   }
 }
