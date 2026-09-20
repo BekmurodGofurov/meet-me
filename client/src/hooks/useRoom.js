@@ -28,6 +28,7 @@ export default function useRoom(tracksRef) {
   const [remoteStreams, setRemoteStreams] = useState({})
   const [remoteMedia, setRemoteMedia] = useState({})
   const [roomError, setRoomError] = useState('')
+  const [messages, setMessages] = useState([])
   const [rejoining, setRejoining] = useState(() => Boolean(storedSessionRef.current))
   // Falls back to the standalone remembered name (survives leaving a room)
   // when there's no active session to rejoin.
@@ -172,6 +173,7 @@ export default function useRoom(tracksRef) {
             setParticipants([])
             setRejoining(false)
             setRememberedName(data.name)
+            setMessages([])
             saveSession(data.roomId, data.name)
             break
 
@@ -182,6 +184,7 @@ export default function useRoom(tracksRef) {
             setCurrentRoom(data.roomId)
             setRejoining(false)
             setRememberedName(data.name)
+            setMessages([])
             saveSession(data.roomId, data.name)
 
             // Creating the connection is enough - onnegotiationneeded fires and
@@ -225,6 +228,16 @@ export default function useRoom(tracksRef) {
               ...prev,
               [data.from]: { cameraOn: data.cameraOn, micOn: data.micOn },
             }))
+            break
+
+          case 'chat-message':
+            // The server never echoes a message back to its own sender (see
+            // contract), so this branch only ever fires for messages from
+            // someone else - the sender adds their own via sendChatMessage.
+            setMessages((prev) => [
+              ...prev,
+              { id: crypto.randomUUID(), from: data.from, fromName: data.fromName, text: data.text },
+            ])
             break
 
           case 'error':
@@ -341,7 +354,26 @@ export default function useRoom(tracksRef) {
     setRemoteStreams({})
     setRemoteMedia({})
     setRoomError('')
+    setMessages([])
   }, [send])
+
+  const sendChatMessage = useCallback(
+    (text) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+
+      send({ type: 'chat-message', text: trimmed })
+
+      // The server broadcasts to everyone except the sender, so the sender's
+      // own copy is added here rather than waiting for a message that will
+      // never arrive.
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), from: myIdRef.current, fromName: me?.name ?? 'You', text: trimmed },
+      ])
+    },
+    [send, me],
+  )
 
   return {
     connectionStatus,
@@ -353,9 +385,11 @@ export default function useRoom(tracksRef) {
     roomError,
     rejoining,
     rememberedName,
+    messages,
     publishTrack,
     createRoom,
     joinRoom,
     leaveRoom,
+    sendChatMessage,
   }
 }
