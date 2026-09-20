@@ -31,13 +31,11 @@ export function CameraIcon({ off = false }) {
 }
 
 export function LeaveIcon() {
-  // Rotated phone-hangup glyph, the universal "end call" symbol.
+  // The standard filled "end call" handset glyph, not built from base's
+  // stroke style - this one needs to read as a solid phone silhouette.
   return (
-    <svg {...base} aria-hidden="true" transform="rotate(135)">
-      <path d="M3 12c5-4 13-4 18 0" />
-      <path d="M8 12.5 6 15" />
-      <path d="M16 12.5 18 15" />
-      <circle cx="12" cy="13.5" r="1.4" fill="currentColor" stroke="none" />
+    <svg viewBox="0 0 24 24" width={22} height={22} fill="currentColor" aria-hidden="true">
+      <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08C.11 12.91 0 12.66 0 12.38c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.68-1.36-2.66-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z" />
     </svg>
   )
 }
