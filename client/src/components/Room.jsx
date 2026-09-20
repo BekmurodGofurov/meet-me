@@ -1,3 +1,4 @@
+import Chat from './Chat'
 import MediaControls from './MediaControls'
 import VideoTile from './VideoTile'
 
@@ -10,6 +11,8 @@ export default function Room({
   remoteMedia,
   media,
   onLeave,
+  messages,
+  onSendMessage,
 }) {
   const nameFor = (clientId) =>
     participants.find((p) => p.clientId === clientId)?.name ?? 'Guest'
@@ -33,24 +36,28 @@ export default function Room({
         error={media.mediaError}
       />
 
-      <div className="video-grid">
-        <VideoTile
-          stream={localStream}
-          muted
-          showVideo={media.cameraOn}
-          label={me ? `${me.name} (you)` : 'You'}
-        />
-
-        {Object.entries(remoteStreams).map(([clientId, stream]) => (
+      <div className="room__body">
+        <div className="video-grid">
           <VideoTile
-            key={clientId}
-            stream={stream}
-            // Without this the tile keeps painting the last frame the peer sent
-            // before switching their camera off.
-            showVideo={remoteMedia[clientId]?.cameraOn ?? false}
-            label={nameFor(clientId)}
+            stream={localStream}
+            muted
+            showVideo={media.cameraOn}
+            label={me ? `${me.name} (you)` : 'You'}
           />
-        ))}
+
+          {Object.entries(remoteStreams).map(([clientId, stream]) => (
+            <VideoTile
+              key={clientId}
+              stream={stream}
+              // Without this the tile keeps painting the last frame the peer
+              // sent before switching their camera off.
+              showVideo={remoteMedia[clientId]?.cameraOn ?? false}
+              label={nameFor(clientId)}
+            />
+          ))}
+        </div>
+
+        <Chat messages={messages} myId={me?.clientId} onSend={onSendMessage} />
       </div>
     </div>
   )

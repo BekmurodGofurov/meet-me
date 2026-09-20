@@ -37,6 +37,8 @@ export default function App() {
           remoteMedia={room.remoteMedia}
           media={media}
           onLeave={room.leaveRoom}
+          messages={room.messages}
+          onSendMessage={room.sendChatMessage}
         />
       ) : (
         <Lobby
