@@ -3,9 +3,11 @@ import CodeInput from './CodeInput'
 
 const CODE_LENGTH = 6
 
-export default function Lobby({ onCreate, onJoin, error, disabled }) {
-  const [step, setStep] = useState('name')
-  const [name, setName] = useState('')
+export default function Lobby({ onCreate, onJoin, error, disabled, initialName = '' }) {
+  // If a rejoin attempt just failed, the name is already known - skip
+  // straight past asking for it again.
+  const [step, setStep] = useState(initialName ? 'choice' : 'name')
+  const [name, setName] = useState(initialName)
   const [chars, setChars] = useState(Array(CODE_LENGTH).fill(''))
 
   const trimmedName = name.trim()

@@ -203,7 +203,26 @@ shows a placeholder instead.
 
 ---
 
-## 9. `chat-message`
+## 9. `leave-room`
+
+**Direction:** Browser → Server
+
+**When:** The user clicks the leave/hang-up button.
+
+**Payload:**
+```json
+{ "type": "leave-room" }
+```
+
+**Server behavior:** Same cleanup as a disconnect — removes the client
+from the room's Map, notifies remaining members with `peer-left`, deletes
+the room if now empty. Unlike a disconnect, the WebSocket connection
+itself stays open, so this same client can immediately `create-room` or
+`join-room` again without reloading the page.
+
+---
+
+## 10. `chat-message`
 
 **Direction:** Browser → Server → broadcast to every other client in
 the same room

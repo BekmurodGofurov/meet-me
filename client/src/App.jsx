@@ -25,7 +25,9 @@ export default function App() {
         Server: {room.connectionStatus}
       </p>
 
-      {room.currentRoom ? (
+      {room.rejoining ? (
+        <p className="rejoining">Rejoining your room...</p>
+      ) : room.currentRoom ? (
         <Room
           roomId={room.currentRoom}
           me={room.me}
@@ -34,6 +36,7 @@ export default function App() {
           remoteStreams={room.remoteStreams}
           remoteMedia={room.remoteMedia}
           media={media}
+          onLeave={room.leaveRoom}
         />
       ) : (
         <Lobby
@@ -41,6 +44,7 @@ export default function App() {
           onJoin={room.joinRoom}
           error={room.roomError}
           disabled={room.connectionStatus !== 'connected'}
+          initialName={room.rememberedName}
         />
       )}
     </div>
