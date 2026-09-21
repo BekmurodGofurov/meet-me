@@ -1,6 +1,14 @@
 import { useEffect, useRef } from 'react'
 
-export default function VideoTile({ stream, muted = false, label, showVideo = true }) {
+export default function VideoTile({
+  stream,
+  muted = false,
+  label,
+  showVideo = true,
+  onClick,
+  size = 'normal',
+  active = false,
+}) {
   const videoRef = useRef(null)
 
   useEffect(() => {
@@ -10,9 +18,21 @@ export default function VideoTile({ stream, muted = false, label, showVideo = tr
   }, [stream])
 
   const initial = label?.trim()?.[0]?.toUpperCase() ?? '?'
+  const clickable = Boolean(onClick)
 
   return (
-    <figure className="video-tile">
+    <figure
+      className={`video-tile video-tile--${size} ${active ? 'is-active' : ''} ${clickable ? 'is-clickable' : ''}`}
+      onClick={onClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (clickable && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          onClick()
+        }
+      }}
+    >
       <div className="video-tile__frame">
         {/* Stays mounted even when hidden: this element carries the peer's
             audio too, so unmounting it would silence them. */}

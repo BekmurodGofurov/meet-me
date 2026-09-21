@@ -21,17 +21,23 @@ export default function Chat({ messages, myId, onSend }) {
       <ul className="chat__messages" ref={listRef}>
         {messages.length === 0 && <li className="chat__empty">No messages yet.</li>}
 
-        {messages.map((message) => (
-          <li
-            key={message.id}
-            className={`chat__message ${message.from === myId ? 'is-mine' : ''}`}
-          >
-            <span className="chat__author">
-              {message.from === myId ? 'You' : message.fromName}
-            </span>
-            <span className="chat__text">{message.text}</span>
-          </li>
-        ))}
+        {messages.map((message) =>
+          message.kind === 'system' ? (
+            <li key={message.id} className={`chat__system chat__system--${message.tone}`}>
+              {message.text}
+            </li>
+          ) : (
+            <li
+              key={message.id}
+              className={`chat__message ${message.from === myId ? 'is-mine' : ''}`}
+            >
+              <span className="chat__author">
+                {message.from === myId ? 'You' : message.fromName}
+              </span>
+              <span className="chat__text">{message.text}</span>
+            </li>
+          ),
+        )}
       </ul>
 
       <form className="chat__form" onSubmit={submit}>
