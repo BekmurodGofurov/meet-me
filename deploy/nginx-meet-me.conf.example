@@ -1,0 +1,35 @@
+# Add these two location blocks into whatever server {} block you already
+# have for this project's domain (the one where your existing SSL cert is
+# terminated - certbot or otherwise). Not a standalone file to drop in as-is.
+#
+# Adjust:
+#   - root path to wherever you copy the built frontend (matches your other
+#     project's /var/www/<name>-frontend/ convention)
+#   - the port in proxy_pass to match BACKEND_PORT in this project's .env
+#     (default 8090 - see docker-compose.yml)
+
+server {
+    # ... your existing listen/server_name/ssl_certificate lines ...
+
+    root /var/www/meet-me-frontend;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # WebSocket signaling - same origin/domain as the frontend, no separate
+    # public port needed. The Upgrade/Connection headers are what make this
+    # a WebSocket proxy instead of a normal HTTP one.
+    location /ws {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        # WebRTC signaling messages are small but the connection is
+        # long-lived - without this nginx closes "idle" connections well
+        # before the call actually ends.
+        proxy_read_timeout 3600s;
+    }
+}

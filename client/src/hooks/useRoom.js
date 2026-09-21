@@ -51,8 +51,13 @@ export default function useRoom(tracksRef) {
   }, [send])
 
   useEffect(() => {
+    // Same-origin, path-based - not a hardcoded port. In production this
+    // lets a single nginx/domain proxy /ws to the backend container on
+    // whatever internal port it actually runs on, no separate public port
+    // needed. In dev, Vite's own server.proxy (see vite.config.js) forwards
+    // this to the local backend the same way.
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const socket = new WebSocket(`${protocol}://${window.location.hostname}:8080`)
+    const socket = new WebSocket(`${protocol}://${window.location.host}/ws`)
     wsRef.current = socket
 
     const post = (message) => socket.send(JSON.stringify(message))

@@ -20,6 +20,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
+    // Mirrors what production nginx does: proxy the same-origin /ws path to
+    // the actual backend, so useRoom.js's WebSocket URL doesn't need to know
+    // a port at all, in dev or production.
+    proxy: {
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+    },
     ...(httpsAvailable && {
       https: {
         key: readFileSync(keyPath),

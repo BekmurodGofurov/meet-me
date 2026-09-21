@@ -1,6 +1,0 @@
-node_modules
-dist
-certs
-*.test.js
-*.test.jsx
-src/test
