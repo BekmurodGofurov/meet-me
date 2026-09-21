@@ -21,9 +21,11 @@ export default function Room({
   // that person to the large view with everyone else in a thumbnail strip.
   const [pinnedId, setPinnedId] = useState(null)
 
-  const nameFor = (clientId) =>
-    participants.find((p) => p.clientId === clientId)?.name ?? 'Guest'
-
+  // Built from the room roster, not from remoteStreams: a participant whose
+  // camera and mic are both off never produces a track, so ontrack never
+  // fires for them - keying tiles off remoteStreams instead of participants
+  // would make them invisible entirely, not just show a placeholder, and it
+  // would also miscount solo/gallery mode below.
   const tiles = [
     {
       id: me?.clientId ?? 'local',
@@ -32,12 +34,12 @@ export default function Room({
       muted: true,
       showVideo: media.cameraOn,
     },
-    ...Object.entries(remoteStreams).map(([clientId, stream]) => ({
-      id: clientId,
-      name: nameFor(clientId),
-      stream,
+    ...participants.map((participant) => ({
+      id: participant.clientId,
+      name: participant.name,
+      stream: remoteStreams[participant.clientId] ?? null,
       muted: false,
-      showVideo: remoteMedia[clientId]?.cameraOn ?? false,
+      showVideo: remoteMedia[participant.clientId]?.cameraOn ?? false,
     })),
   ]
 
