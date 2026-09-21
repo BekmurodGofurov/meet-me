@@ -17,6 +17,10 @@ export default function useRoom(tracksRef) {
   const remoteStreamsRef = useRef(new Map())
   const myIdRef = useRef(null)
   const mediaStateRef = useRef({ cameraOn: false, micOn: false })
+  // peer-left only carries a clientId, not a name - by the time it arrives
+  // the name has to already be known somewhere that isn't a stale closure
+  // over participants state, so it's kept here instead.
+  const participantNamesRef = useRef(new Map())
   // Read once, before the connect effect runs, so it's available the instant
   // the socket opens rather than racing a state update.
   const storedSessionRef = useRef(loadSession())
@@ -189,22 +193,38 @@ export default function useRoom(tracksRef) {
 
             // Creating the connection is enough - onnegotiationneeded fires and
             // sends the offer.
-            data.peers.forEach((peer) => getPeer(peer.clientId))
+            data.peers.forEach((peer) => {
+              getPeer(peer.clientId)
+              participantNamesRef.current.set(peer.clientId, peer.name)
+            })
             post({ type: 'media-state', ...mediaStateRef.current })
             break
           }
 
           case 'peer-joined':
+            participantNamesRef.current.set(data.clientId, data.name)
             setParticipants((prev) => [...prev, { clientId: data.clientId, name: data.name }])
+            setMessages((prev) => [
+              ...prev,
+              { id: crypto.randomUUID(), kind: 'system', tone: 'join', text: `${data.name} joined the room` },
+            ])
             // Tell the newcomer whether our camera/mic are already on, since
             // they missed the announcement we made when we arrived.
             post({ type: 'media-state', ...mediaStateRef.current })
             break
 
-          case 'peer-left':
+          case 'peer-left': {
+            const name = participantNamesRef.current.get(data.clientId) ?? 'Someone'
+            participantNamesRef.current.delete(data.clientId)
+
             setParticipants((prev) => prev.filter((p) => p.clientId !== data.clientId))
+            setMessages((prev) => [
+              ...prev,
+              { id: crypto.randomUUID(), kind: 'system', tone: 'leave', text: `${name} left the room` },
+            ])
             closePeer(data.clientId)
             break
+          }
 
           case 'offer':
           case 'answer':
@@ -236,7 +256,7 @@ export default function useRoom(tracksRef) {
             // someone else - the sender adds their own via sendChatMessage.
             setMessages((prev) => [
               ...prev,
-              { id: crypto.randomUUID(), from: data.from, fromName: data.fromName, text: data.text },
+              { id: crypto.randomUUID(), kind: 'chat', from: data.from, fromName: data.fromName, text: data.text },
             ])
             break
 
@@ -342,6 +362,7 @@ export default function useRoom(tracksRef) {
     peersRef.current.forEach((peer) => peer.pc.close())
     peersRef.current.clear()
     remoteStreamsRef.current.clear()
+    participantNamesRef.current.clear()
 
     // Tell the server explicitly - the socket itself stays open so this
     // connection can create/join another room next, which means the server
@@ -369,7 +390,7 @@ export default function useRoom(tracksRef) {
       // never arrive.
       setMessages((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), from: myIdRef.current, fromName: me?.name ?? 'You', text: trimmed },
+        { id: crypto.randomUUID(), kind: 'chat', from: myIdRef.current, fromName: me?.name ?? 'You', text: trimmed },
       ])
     },
     [send, me],

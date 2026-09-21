@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import './App.scss'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
+import Topbar from './components/Topbar'
 import useLocalMedia from './hooks/useLocalMedia'
 import useRoom from './hooks/useRoom'
 
@@ -20,16 +21,12 @@ export default function App() {
 
   return (
     <div className="app">
-      <h1>Meet Me</h1>
-      <p className={`connection-status connection-status--${room.connectionStatus}`}>
-        Server: {room.connectionStatus}
-      </p>
+      <Topbar connectionStatus={room.connectionStatus} roomId={room.currentRoom} />
 
       {room.rejoining ? (
         <p className="rejoining">Rejoining your room...</p>
       ) : room.currentRoom ? (
         <Room
-          roomId={room.currentRoom}
           me={room.me}
           participants={room.participants}
           localStream={media.stream}

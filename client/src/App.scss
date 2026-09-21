@@ -35,19 +35,52 @@ input {
   box-sizing: border-box;
 }
 
-.connection-status {
-  font-size: 14px;
-  margin: 0 0 12px;
+.topbar {
+  width: 96%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  h1 {
+    margin: 0;
+    font-size: 28px;
+  }
+
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__room {
+    font-size: 15px;
+    opacity: 0.85;
+    background: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 
   &--connecting {
-    color: #d9a441;
+    background: #d9a441;
   }
   &--connected {
-    color: #4caf7d;
+    background: #4caf7d;
   }
   &--error,
   &--closed {
-    color: #e05555;
+    background: #e05555;
   }
 }
 
@@ -124,58 +157,87 @@ input {
 }
 
 .room {
-  width: 100%;
-  max-width: 1100px;
+  width: 96%;
 
-  &__header {
-    margin-bottom: 16px;
-
-    h2 {
-      margin: 0 0 4px;
-    }
-
-    p {
-      margin: 0;
-      font-size: 14px;
-      opacity: 0.8;
-    }
-  }
-
-  &__roster {
-    margin-top: 8px;
-    overflow-wrap: anywhere;
-  }
-
-  &__body {
+  &__layout {
     display: flex;
     gap: 16px;
     align-items: flex-start;
     text-align: left;
 
-    @media (max-width: 720px) {
+    @media (max-width: 900px) {
       flex-direction: column;
     }
   }
+
+  &__main {
+    flex: 1;
+    min-width: 0; // otherwise a flex item won't shrink below its content size
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+  }
+}
+
+.stage-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 14%;
+  min-width: 110px;
+  flex-shrink: 0;
+
+  @media (max-width: 900px) {
+    flex-direction: row;
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
+.stage-active {
+  width: 100%;
+}
+
+.video-stage {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 64px; // reserved so the overlaid controls pill below don't
+  // sit on top of a tile's video or caption
+}
+
+// Sits on top of the video itself rather than as a separate row below it -
+// a floating pill anchored to the bottom edge, like a phone's call screen.
+.video-stage__controls {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+.media-error {
+  margin: 8px 0 0;
+  color: #e05555;
+  font-size: 14px;
+  text-align: center;
 }
 
 .media-controls {
   display: flex;
-  gap: 14px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-
-  &__error {
-    width: 100%;
-    margin: 0;
-    color: #e05555;
-    font-size: 14px;
-  }
+  gap: 12px;
+  flex-wrap: nowrap;
 }
 
 .icon-button {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border-radius: 50%;
   display: inline-flex;
@@ -214,7 +276,10 @@ input {
 
 .video-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  // 1fr, not a fixed max: with 2+ tiles this fills the available space (the
+  // point now that a solo participant no longer renders through this grid at
+  // all - see Room.jsx - so there's no single-tile-stretch case left here).
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
   flex: 1;
   min-width: 0; // otherwise a flex item won't shrink below its content size
@@ -227,13 +292,14 @@ input {
 .chat {
   display: flex;
   flex-direction: column;
-  width: 280px;
+  width: 24%;
+  min-width: 220px;
   flex-shrink: 0;
   background: #1c1d24;
   border-radius: 10px;
   overflow: hidden;
 
-  @media (max-width: 720px) {
+  @media (max-width: 900px) {
     width: 100%;
   }
 
@@ -274,6 +340,23 @@ input {
   &__author {
     font-size: 11px;
     opacity: 0.7;
+  }
+
+  // No bubble, no author line - the text itself already names who joined or
+  // left, so this is plain centered text, not a chat message.
+  &__system {
+    align-self: center;
+    text-align: center;
+    font-size: 12px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+
+    &--join {
+      color: #4caf7d;
+    }
+    &--leave {
+      color: #e05555;
+    }
   }
 
   &__form {
@@ -331,5 +414,57 @@ input {
     font-size: 13px;
     margin-top: 4px;
     overflow-wrap: anywhere;
+  }
+
+  &.is-clickable {
+    cursor: pointer;
+
+    .video-tile__frame {
+      transition: outline-color 0.15s;
+      outline: 2px solid transparent;
+      outline-offset: 2px;
+    }
+
+    &:hover .video-tile__frame,
+    &:focus-visible .video-tile__frame {
+      outline-color: #6b4de6;
+    }
+  }
+
+  &--small {
+    width: 100%;
+    max-width: 160px;
+    flex-shrink: 0;
+
+    figcaption {
+      font-size: 11px;
+    }
+  }
+
+  // The spotlighted tile is a fixed box, not a fixed landscape aspect ratio -
+  // a phone held upright shouldn't get cropped into a 16:9 shape. object-fit:
+  // contain then letterboxes whichever orientation the source actually is,
+  // instead of cropping it to fit a shape it doesn't have.
+  &--large {
+    .video-tile__frame {
+      aspect-ratio: unset;
+      width: 100%;
+      height: 76vh;
+      max-height: 820px;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  }
+
+  // The active tile is marked by its own border, not a text label - it
+  // needs to hold regardless of hover/focus state, unlike is-clickable's
+  // outline above which only shows on interaction.
+  &.is-active .video-tile__frame {
+    outline: 2px solid #4caf7d;
+    outline-offset: 2px;
   }
 }
