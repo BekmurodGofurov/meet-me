@@ -1,0 +1,12 @@
+{
+  "name": "e2e",
+  "version": "1.0.0",
+  "description": "End-to-end tests: real backend, real frontend, real (headless) browsers.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}
