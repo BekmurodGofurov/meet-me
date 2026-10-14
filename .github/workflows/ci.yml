@@ -60,7 +60,7 @@ jobs:
           exit 1
 
   frontend:
-    name: Frontend (unit + integration + build)
+    name: Frontend (lint + unit + build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +74,10 @@ jobs:
       - name: Install dependencies
         working-directory: client
         run: npm ci
+
+      - name: Run linter
+        working-directory: client
+        run: npm run lint
 
       - name: Run tests
         working-directory: client

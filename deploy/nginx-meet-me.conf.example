@@ -1,15 +1,26 @@
-# Add these two location blocks into whatever server {} block you already
-# have for this project's domain (the one where your existing SSL cert is
-# terminated - certbot or otherwise). Not a standalone file to drop in as-is.
+# A complete, standalone site file for meet-me.bekmurod.uz (a fresh
+# subdomain with no existing server block to add onto). If you're instead
+# reusing a domain that already has an SSL-terminated block for another
+# project, just copy the `location /` and `location /ws` blocks into that
+# one - don't create a second server block for the same domain.
 #
-# Adjust:
-#   - root path to wherever you copy the built frontend (matches your other
-#     project's /var/www/<name>-frontend/ convention)
-#   - the port in proxy_pass to match BACKEND_PORT in this project's .env
-#     (default 8090 - see docker-compose.yml)
+# Setup, in order:
+#   1. sudo nano /etc/nginx/sites-available/meet-me
+#      (paste this file, adjusted for your actual paths/port)
+#   2. sudo ln -s /etc/nginx/sites-available/meet-me /etc/nginx/sites-enabled/
+#   3. sudo nginx -t && sudo systemctl reload nginx
+#      -> http://meet-me.bekmurod.uz should now serve the app (plain http)
+#   4. sudo apt install certbot python3-certbot-nginx   # if not already installed
+#      sudo certbot --nginx -d meet-me.bekmurod.uz
+#      -> certbot edits this file in place, adding the SSL block and an
+#         http->https redirect, and sets up auto-renewal
+#
+# Camera/mic access needs a secure context - unlike localhost, a real public
+# domain over plain http does NOT count, so step 4 is not optional here.
 
 server {
-    # ... your existing listen/server_name/ssl_certificate lines ...
+    listen 80;
+    server_name meet-me.bekmurod.uz;
 
     root /var/www/meet-me-frontend;
     index index.html;

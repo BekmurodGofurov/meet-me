@@ -21,9 +21,10 @@ export default function useRoom(tracksRef) {
   // the name has to already be known somewhere that isn't a stale closure
   // over participants state, so it's kept here instead.
   const participantNamesRef = useRef(new Map())
-  // Read once, before the connect effect runs, so it's available the instant
+  // Read once on mount, before the connect effect runs, so it's available the instant
   // the socket opens rather than racing a state update.
-  const storedSessionRef = useRef(loadSession())
+  const [initialSession] = useState(loadSession)
+  const storedSessionRef = useRef(initialSession)
 
   const [connectionStatus, setConnectionStatus] = useState('connecting')
   const [currentRoom, setCurrentRoom] = useState(null)
@@ -33,11 +34,11 @@ export default function useRoom(tracksRef) {
   const [remoteMedia, setRemoteMedia] = useState({})
   const [roomError, setRoomError] = useState('')
   const [messages, setMessages] = useState([])
-  const [rejoining, setRejoining] = useState(() => Boolean(storedSessionRef.current))
+  const [rejoining, setRejoining] = useState(Boolean(initialSession))
   // Falls back to the standalone remembered name (survives leaving a room)
   // when there's no active session to rejoin.
   const [rememberedName, setRememberedName] = useState(
-    () => storedSessionRef.current?.name ?? loadName(),
+    () => initialSession?.name ?? loadName(),
   )
 
   const send = useCallback((message) => {
@@ -285,10 +286,13 @@ export default function useRoom(tracksRef) {
       }
     }
 
+    const peers = peersRef.current
+    const remoteStreams = remoteStreamsRef.current
+
     return () => {
-      peersRef.current.forEach((peer) => peer.pc.close())
-      peersRef.current.clear()
-      remoteStreamsRef.current.clear()
+      peers.forEach((peer) => peer.pc.close())
+      peers.clear()
+      remoteStreams.clear()
 
       // Detach first: a discarded socket must not write state belonging to the
       // socket that replaced it.
