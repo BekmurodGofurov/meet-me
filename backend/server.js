@@ -4,7 +4,32 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { createSignalingServer } from './signaling.js';
 
+// Load environment variables from .env if present
+if (typeof process.loadEnvFile === 'function') {
+  const envCandidates = [
+    '.env',
+    fileURLToPath(new URL('./.env', import.meta.url)),
+    fileURLToPath(new URL('../.env', import.meta.url)),
+  ];
+  for (const candidate of envCandidates) {
+    if (existsSync(candidate)) {
+      try {
+        process.loadEnvFile(candidate);
+        break;
+      } catch {
+        // Continue to next candidate
+      }
+    }
+  }
+}
+
 const pageHandler = (req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/health' || url.pathname === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', service: 'meet-me signaling' }));
+    return;
+  }
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Signaling server OK');
 };
@@ -30,9 +55,18 @@ const server = useHttps
     )
   : createHttpServer(pageHandler);
 
+const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
+const secretKey = process.env.SECRET_KEY || undefined;
 const roomGraceMs = process.env.ROOM_GRACE_MS ? Number(process.env.ROOM_GRACE_MS) : undefined;
-createSignalingServer(server, roomGraceMs ? { roomGraceMs } : undefined);
 
-server.listen(8080, () => {
-  console.log(`Server is running on ${useHttps ? 'wss' : 'ws'}://localhost:8080`);
+createSignalingServer(server, {
+  ...(roomGraceMs ? { roomGraceMs } : {}),
+  ...(secretKey ? { secretKey } : {}),
+});
+
+server.listen(PORT, () => {
+  console.log(`Server is running on ${useHttps ? 'wss' : 'ws'}://localhost:${PORT}`);
+  if (secretKey) {
+    console.log('Secret key authentication is enabled');
+  }
 });

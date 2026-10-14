@@ -361,3 +361,61 @@ describe('malformed input', () => {
     assert.equal(response.type, 'room-created');
   });
 });
+
+describe('secretKey authentication', () => {
+  let authServer;
+  let authWss;
+  let authUrl;
+  const TEST_SECRET = 'secret-123';
+
+  beforeEach(async () => {
+    authServer = createServer();
+    authWss = createSignalingServer(authServer, { secretKey: TEST_SECRET });
+    await new Promise((resolve) => authServer.listen(0, resolve));
+    const { port } = authServer.address();
+    authUrl = `ws://localhost:${port}`;
+  });
+
+  afterEach(async () => {
+    authWss.clients.forEach((client) => client.terminate());
+    await new Promise((resolve) => authServer.close(resolve));
+  });
+
+  test('rejects connection if secret key is missing', async () => {
+    const ws = new WebSocket(authUrl);
+    const message = await new Promise((resolve) => {
+      ws.on('message', (data) => resolve(JSON.parse(data.toString())));
+    });
+    assert.equal(message.type, 'error');
+    assert.match(message.message, /secret key/i);
+
+    const closeCode = await new Promise((resolve) => {
+      ws.on('close', (code) => resolve(code));
+    });
+    assert.equal(closeCode, 4001);
+  });
+
+  test('rejects connection if secret key is wrong', async () => {
+    const ws = new WebSocket(`${authUrl}?secretKey=wrong-key`);
+    const message = await new Promise((resolve) => {
+      ws.on('message', (data) => resolve(JSON.parse(data.toString())));
+    });
+    assert.equal(message.type, 'error');
+    assert.match(message.message, /secret key/i);
+  });
+
+  test('accepts connection if secret key matches', async () => {
+    const ws = new WebSocket(`${authUrl}?secretKey=${TEST_SECRET}`);
+    await new Promise((resolve, reject) => {
+      ws.on('open', resolve);
+      ws.on('error', reject);
+    });
+
+    send(ws, { type: 'create-room', name: 'Authorized' });
+    const response = await new Promise((resolve) => {
+      ws.on('message', (data) => resolve(JSON.parse(data.toString())));
+    });
+    assert.equal(response.type, 'room-created');
+    ws.close();
+  });
+});

@@ -18,7 +18,7 @@ const roster = (roomClients, excludeId) =>
 // returns the WebSocketServer. Kept separate from server.js so tests can run
 // this against a plain http server on an ephemeral port, with no dependency
 // on the real TLS certificate or a fixed port.
-export function createSignalingServer(server, { roomGraceMs = 10000 } = {}) {
+export function createSignalingServer(server, { roomGraceMs = 10000, secretKey } = {}) {
   const wss = new WebSocketServer({ server });
 
   // Map<roomId, Map<clientId, { ws, name }>> - exposed on the returned wss
@@ -34,7 +34,31 @@ export function createSignalingServer(server, { roomGraceMs = 10000 } = {}) {
   // grace period lets a lone reconnecting client still find its own room.
   const roomDeletionTimers = new Map();
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    // If a secretKey is configured, ensure the client provided it via query param or header
+    if (secretKey) {
+      const parsedUrl = new URL(req?.url || '/', 'http://localhost');
+      const providedKey =
+        parsedUrl.searchParams.get('secretKey') ||
+        parsedUrl.searchParams.get('secret') ||
+        req?.headers?.['x-secret-key'];
+
+      if (providedKey !== secretKey) {
+        console.warn(`Connection rejected: invalid or missing secret key`);
+        ws.send(
+          JSON.stringify({ type: 'error', message: 'Unauthorized: Invalid secret key' }),
+          () => {
+            try {
+              ws.close(4001, 'Unauthorized');
+            } catch {
+              // Ignore if already closed
+            }
+          },
+        );
+        return;
+      }
+    }
+
     const clientId = crypto.randomUUID();
     let currentRoomId = null;
 
