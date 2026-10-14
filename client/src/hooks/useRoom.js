@@ -3,6 +3,37 @@ import { clearSession, loadName, loadSession, saveSession } from '../session'
 
 const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
+export function getWebSocketUrl() {
+  let envWsUrl = import.meta.env.VITE_WS_URL
+  const secretKey = import.meta.env.VITE_SECRET_KEY
+
+  let targetUrl
+  if (envWsUrl) {
+    if (envWsUrl.startsWith('http://')) {
+      envWsUrl = 'ws://' + envWsUrl.slice(7)
+    } else if (envWsUrl.startsWith('https://')) {
+      envWsUrl = 'wss://' + envWsUrl.slice(8)
+    }
+
+    if (envWsUrl.startsWith('ws://') || envWsUrl.startsWith('wss://')) {
+      targetUrl = new URL(envWsUrl)
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const path = envWsUrl.startsWith('/') ? envWsUrl : `/${envWsUrl}`
+      targetUrl = new URL(`${protocol}//${window.location.host}${path}`)
+    }
+  } else {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    targetUrl = new URL(`${protocol}//${window.location.host}/ws`)
+  }
+
+  if (secretKey) {
+    targetUrl.searchParams.set('secretKey', secretKey)
+  }
+
+  return targetUrl.toString()
+}
+
 // Owns the signaling socket and the mesh of peer connections it drives. Those
 // two are inseparable - every peer connection is created, advanced and torn
 // down in response to a signaling message - so they live in one hook.
@@ -57,8 +88,8 @@ export default function useRoom(tracksRef) {
     // whatever internal port it actually runs on, no separate public port
     // needed. In dev, Vite's own server.proxy (see vite.config.js) forwards
     // this to the local backend the same way.
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const socket = new WebSocket(`${protocol}://${window.location.host}/ws`)
+    const wsUrl = getWebSocketUrl()
+    const socket = new WebSocket(wsUrl)
     wsRef.current = socket
 
     const post = (message) => socket.send(JSON.stringify(message))

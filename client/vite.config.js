@@ -25,7 +25,7 @@ export default defineConfig({
     // a port at all, in dev or production.
     proxy: {
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: process.env.BACKEND_TARGET || `ws://localhost:${process.env.BACKEND_PORT || process.env.PORT || '8080'}`,
         ws: true,
       },
     },

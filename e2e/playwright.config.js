@@ -44,14 +44,14 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       // Short so the "genuinely stale room" test doesn't need to wait out
       // the real 10s production grace period - the tests know this value.
-      env: { E2E: '1', ROOM_GRACE_MS: '1500' },
+      env: { E2E: '1', ROOM_GRACE_MS: '1500', SECRET_KEY: 'test-secret-key' },
     },
     {
       command: `npm run dev -- --port ${FRONTEND_PORT}`,
       cwd: '../client',
       port: FRONTEND_PORT,
       reuseExistingServer: !process.env.CI,
-      env: { E2E: '1' },
+      env: { E2E: '1', VITE_SECRET_KEY: 'test-secret-key' },
     },
   ],
 })

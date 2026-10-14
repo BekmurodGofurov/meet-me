@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { clearSession, loadSession, saveSession } from '../session'
 import { FakeMediaStreamTrack, installMediaMocks } from '../test/media-mocks'
 import { FakeRTCPeerConnection, installWebrtcMocks, latestSocket } from '../test/webrtc-mocks'
-import useRoom from './useRoom'
+import useRoom, { getWebSocketUrl } from './useRoom'
 
 function setup(tracks = { video: null, audio: null }) {
   const tracksRef = { current: tracks }
@@ -22,6 +22,13 @@ beforeEach(() => {
   installMediaMocks()
   installWebrtcMocks()
   localStorage.clear()
+})
+
+describe('getWebSocketUrl', () => {
+  it('returns default same-origin /ws when no env vars are set', () => {
+    const url = getWebSocketUrl()
+    expect(url).toMatch(/^ws:\/\/.*\/ws$/)
+  })
 })
 
 describe('connecting', () => {

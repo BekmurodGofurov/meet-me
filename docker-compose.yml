@@ -2,6 +2,10 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    environment:
+      - PORT=8080
+      - SECRET_KEY=${SECRET_KEY:-meet-me-secret-key-change-in-production}
+      - ROOM_GRACE_MS=${ROOM_GRACE_MS:-10000}
     ports:
       # Bound to loopback only - nginx on the same host proxies to it, so it
       # never needs to be reachable directly from outside this server.
