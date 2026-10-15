@@ -1,0 +1,46 @@
+name: Continuous Deployment to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: SSH into EC2 and update app
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            cd /home/admin/projects/meet-me
+            git pull origin main
+
+            # NVM / Node muhitini yuklash (non-interactive SSH sessiyalar uchun)
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            
+            cd client
+            npm i
+            npm run build
+            sudo mkdir -p /var/www/meet-me-frontend
+            sudo rm -rf /var/www/meet-me-frontend/*
+            sudo cp -r dist/* /var/www/meet-me-frontend/
+            cd ..
+
+    
+            docker compose up -d --build
+
+            
+            sudo systemctl reload nginx
