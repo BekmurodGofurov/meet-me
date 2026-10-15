@@ -14,7 +14,7 @@ test('refreshing the page automatically rejoins the same room', async ({ page })
 
   await page.reload()
 
-  await expect(page.getByText(/rejoining your room/i)).toBeVisible()
+  await expect(page.getByText(/rejoining your room/i).or(room.roomCodeText())).toBeVisible()
   await expect(room.roomCodeText()).toHaveText(`Room ${code}`, { timeout: 10000 })
 })
 

@@ -25,9 +25,12 @@ beforeEach(() => {
 })
 
 describe('getWebSocketUrl', () => {
-  it('returns default same-origin /ws when no env vars are set', () => {
+  it('returns valid websocket url with path /ws and secretKey if present', () => {
     const url = getWebSocketUrl()
-    expect(url).toMatch(/^ws:\/\/.*\/ws$/)
+    expect(url).toMatch(/^ws:\/\/.*\/ws(\?.*)?$/)
+    if (import.meta.env.VITE_SECRET_KEY) {
+      expect(url).toContain(`secretKey=${import.meta.env.VITE_SECRET_KEY}`)
+    }
   })
 })
 
