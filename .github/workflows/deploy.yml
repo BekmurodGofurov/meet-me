@@ -26,9 +26,10 @@ jobs:
             cd /home/admin/projects/meet-me
             git pull origin main
 
-            # NVM / Node muhitini yuklash (non-interactive SSH sessiyalar uchun)
+            # NVM / Node muhitini yuklash (mavjud bo'lmasa ham xato bermasligi uchun || true)
             export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || true
+            export PATH="$PATH:/usr/local/bin:/usr/bin"
 
             
             cd client
