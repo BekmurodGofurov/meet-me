@@ -12,10 +12,24 @@ export default function VideoTile({
   const videoRef = useRef(null)
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream ?? null
+    const video = videoRef.current
+    if (!video) return
+
+    if (stream) {
+      if (video.srcObject !== stream) {
+        video.srcObject = stream
+      }
+      try {
+        video.play?.()?.catch?.(() => {
+          // Handled gracefully if browser autoplay policy delays playback
+        })
+      } catch {
+        // Ignore test environments or unsupported play()
+      }
+    } else {
+      video.srcObject = null
     }
-  }, [stream])
+  }, [stream, showVideo])
 
   const initial = label?.trim()?.[0]?.toUpperCase() ?? '?'
   const clickable = Boolean(onClick)
