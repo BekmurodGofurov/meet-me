@@ -29,7 +29,7 @@ describe('getWebSocketUrl', () => {
     const url = getWebSocketUrl()
     expect(url).toMatch(/^ws:\/\/.*\/ws(\?.*)?$/)
     if (import.meta.env.VITE_SECRET_KEY) {
-      expect(url).toContain(`secretKey=${import.meta.env.VITE_SECRET_KEY}`)
+      expect(url).toContain(new URLSearchParams({ secretKey: import.meta.env.VITE_SECRET_KEY }).toString())
     }
   })
 })

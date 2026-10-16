@@ -1,36 +1,59 @@
 import { useState } from 'react'
 import CodeInput from './CodeInput'
+import { loadName, saveName } from '../session'
 
 const CODE_LENGTH = 6
 
 export default function Lobby({ onCreate, onJoin, error, disabled, initialName = '' }) {
-  // If a rejoin attempt just failed, the name is already known - skip
-  // straight past asking for it again.
-  const [step, setStep] = useState(initialName ? 'choice' : 'name')
-  const [name, setName] = useState(initialName)
+  // If a name is already remembered or passed, start at choice step
+  const remembered = initialName || loadName()
+  const [step, setStep] = useState(remembered ? 'choice' : 'name')
+  const [name, setName] = useState(remembered)
   const [chars, setChars] = useState(Array(CODE_LENGTH).fill(''))
 
   const trimmedName = name.trim()
   const code = chars.join('')
   const codeComplete = chars.every(Boolean)
 
+  const handleNameChange = (val) => {
+    setName(val)
+    if (val.trim()) {
+      saveName(val.trim())
+    }
+  }
+
+  const handleContinue = () => {
+    if (!trimmedName) return
+    saveName(trimmedName)
+    setStep('choice')
+  }
+
+  const handleCreate = () => {
+    if (!trimmedName || disabled) return
+    saveName(trimmedName)
+    onCreate(trimmedName)
+  }
+
   const submitJoin = (value = code) => {
-    if (value.length === CODE_LENGTH && !disabled) onJoin(value, trimmedName)
+    if (value.length === CODE_LENGTH && !disabled) {
+      saveName(trimmedName)
+      onJoin(value, trimmedName)
+    }
   }
 
   if (step === 'name') {
     return (
       <div className="lobby">
-        <h2>What's your name?</h2>
+        <h2>Enter your name !</h2>
         <input
           autoFocus
-          placeholder="e.g. Bekmurod"
+          placeholder="Your name... e.g. Bekmurod"
           value={name}
           maxLength={24}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && trimmedName && setStep('choice')}
+          onChange={(e) => handleNameChange(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && trimmedName && handleContinue()}
         />
-        <button disabled={!trimmedName} onClick={() => setStep('choice')}>
+        <button disabled={!trimmedName} onClick={handleContinue}>
           Continue
         </button>
       </div>
@@ -43,7 +66,7 @@ export default function Lobby({ onCreate, onJoin, error, disabled, initialName =
         <h2>Hi, {trimmedName}</h2>
         <p className="lobby__hint">Start a new room, or join one with a code.</p>
 
-        <button disabled={disabled} onClick={() => onCreate(trimmedName)}>
+        <button disabled={disabled} onClick={handleCreate}>
           Create a room
         </button>
         <button className="is-secondary" onClick={() => setStep('join')}>
