@@ -12,7 +12,7 @@ export class RoomPage {
   }
 
   async enterName(name) {
-    await this.page.getByPlaceholder(/bekmurod/i).fill(name)
+    await this.page.getByPlaceholder(/name|bekmurod/i).fill(name)
     await this.page.getByRole('button', { name: /continue/i }).click()
   }
 

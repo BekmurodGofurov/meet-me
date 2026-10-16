@@ -18,7 +18,7 @@ const roster = (roomClients, excludeId) =>
 // returns the WebSocketServer. Kept separate from server.js so tests can run
 // this against a plain http server on an ephemeral port, with no dependency
 // on the real TLS certificate or a fixed port.
-export function createSignalingServer(server, { roomGraceMs = 10000, secretKey } = {}) {
+export function createSignalingServer(server, { roomGraceMs = 30000, secretKey } = {}) {
   const wss = new WebSocketServer({ server });
 
   // Map<roomId, Map<clientId, { ws, name }>> - exposed on the returned wss

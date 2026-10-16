@@ -43,7 +43,7 @@ input {
   gap: 12px;
 
   h1 {
-    margin: 0;
+    margin: 10px 0;
     font-size: 28px;
   }
 
@@ -158,6 +158,7 @@ input {
 
 .room {
   width: 96%;
+  padding-bottom: 80px;
 
   &__layout {
     display: flex;
@@ -212,14 +213,17 @@ input {
 // Sits on top of the video itself rather than as a separate row below it -
 // a floating pill anchored to the bottom edge, like a phone's call screen.
 .video-stage__controls {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  bottom: 10px;
+  bottom: 20px;
+  bottom: max(20px, env(safe-area-inset-bottom, 20px));
   transform: translateX(-50%);
+  z-index: 100;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(6px);
   padding: 8px 12px;
   border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .media-error {

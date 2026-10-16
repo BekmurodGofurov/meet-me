@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { clearSession, loadName, loadSession, saveSession } from '../session'
+import { clearSession, loadName, loadSession, saveName, saveSession } from '../session'
 
 const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
@@ -194,8 +194,9 @@ export default function useRoom(tracksRef) {
     socket.onopen = () => {
       setConnectionStatus('connected')
 
-      const stored = storedSessionRef.current
+      const stored = storedSessionRef.current || loadSession()
       if (stored) {
+        storedSessionRef.current = stored
         post({ type: 'join-room', roomId: stored.roomId, name: stored.name })
       }
     }
@@ -216,6 +217,7 @@ export default function useRoom(tracksRef) {
             setRememberedName(data.name)
             setMessages([])
             saveSession(data.roomId, data.name)
+            storedSessionRef.current = { roomId: data.roomId, name: data.name }
             break
 
           case 'existing-peers': {
@@ -227,6 +229,7 @@ export default function useRoom(tracksRef) {
             setRememberedName(data.name)
             setMessages([])
             saveSession(data.roomId, data.name)
+            storedSessionRef.current = { roomId: data.roomId, name: data.name }
 
             // Creating the connection is enough - onnegotiationneeded fires and
             // sends the offer.
@@ -288,9 +291,6 @@ export default function useRoom(tracksRef) {
             break
 
           case 'chat-message':
-            // The server never echoes a message back to its own sender (see
-            // contract), so this branch only ever fires for messages from
-            // someone else - the sender adds their own via sendChatMessage.
             setMessages((prev) => [
               ...prev,
               { id: crypto.randomUUID(), kind: 'chat', from: data.from, fromName: data.fromName, text: data.text },
@@ -298,9 +298,6 @@ export default function useRoom(tracksRef) {
             break
 
           case 'error':
-            // The stored room may no longer exist (server restarted, or
-            // everyone else already left and it was cleaned up) - fall back
-            // to the normal lobby instead of retrying forever.
             if (storedSessionRef.current) {
               clearSession()
               storedSessionRef.current = null
@@ -382,6 +379,7 @@ export default function useRoom(tracksRef) {
   const createRoom = useCallback(
     (name) => {
       setRoomError('')
+      saveName(name)
       send({ type: 'create-room', name })
     },
     [send],
@@ -390,6 +388,9 @@ export default function useRoom(tracksRef) {
   const joinRoom = useCallback(
     (roomId, name) => {
       setRoomError('')
+      saveName(name)
+      saveSession(roomId, name)
+      storedSessionRef.current = { roomId, name }
       send({ type: 'join-room', roomId, name })
     },
     [send],
