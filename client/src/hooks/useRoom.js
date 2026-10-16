@@ -1,7 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearSession, loadName, loadSession, saveName, saveSession } from '../session'
 
-const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+export const ICE_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ],
+}
 
 export function getWebSocketUrl() {
   let envWsUrl = import.meta.env.VITE_WS_URL
@@ -46,6 +68,7 @@ export default function useRoom(tracksRef) {
   const wsRef = useRef(null)
   const peersRef = useRef(new Map())
   const remoteStreamsRef = useRef(new Map())
+  const pendingCandidatesRef = useRef(new Map())
   const myIdRef = useRef(null)
   const mediaStateRef = useRef({ cameraOn: false, micOn: false })
   // peer-left only carries a clientId, not a name - by the time it arrives
@@ -130,12 +153,13 @@ export default function useRoom(tracksRef) {
         let stream = remoteStreamsRef.current.get(peerId)
         if (!stream) {
           stream = new MediaStream()
-          remoteStreamsRef.current.set(peerId, stream)
         }
         if (!stream.getTracks().some((existingTrack) => existingTrack.id === track.id)) {
           stream.addTrack(track)
         }
-        setRemoteStreams((prev) => ({ ...prev, [peerId]: stream }))
+        const updatedStream = new MediaStream(stream.getTracks())
+        remoteStreamsRef.current.set(peerId, updatedStream)
+        setRemoteStreams((prev) => ({ ...prev, [peerId]: updatedStream }))
       }
 
       const { video, audio } = tracksRef.current
@@ -157,6 +181,7 @@ export default function useRoom(tracksRef) {
       peersRef.current.get(peerId)?.pc.close()
       peersRef.current.delete(peerId)
       remoteStreamsRef.current.delete(peerId)
+      pendingCandidatesRef.current.delete(peerId)
 
       setRemoteStreams((prev) => {
         const next = { ...prev }
@@ -184,6 +209,19 @@ export default function useRoom(tracksRef) {
       peer.settingRemoteAnswer = description.type === 'answer'
       await pc.setRemoteDescription(description)
       peer.settingRemoteAnswer = false
+
+      // Drain any ICE candidates that arrived before the remote description was applied
+      const queuedCandidates = pendingCandidatesRef.current.get(peerId)
+      if (queuedCandidates?.length) {
+        pendingCandidatesRef.current.delete(peerId)
+        for (const candidate of queuedCandidates) {
+          try {
+            await pc.addIceCandidate(candidate)
+          } catch (err) {
+            console.error('Failed to add queued ICE candidate', err)
+          }
+        }
+      }
 
       if (description.type === 'offer') {
         await pc.setLocalDescription()
@@ -272,8 +310,14 @@ export default function useRoom(tracksRef) {
             break
 
           case 'ice-candidate': {
+            if (!data.payload) break
             const peer = peersRef.current.get(data.senderId)
-            if (!peer) break
+            if (!peer || !peer.pc.remoteDescription) {
+              const queue = pendingCandidatesRef.current.get(data.senderId) ?? []
+              queue.push(data.payload)
+              pendingCandidatesRef.current.set(data.senderId, queue)
+              break
+            }
             try {
               await peer.pc.addIceCandidate(data.payload)
             } catch (err) {
@@ -316,11 +360,13 @@ export default function useRoom(tracksRef) {
 
     const peers = peersRef.current
     const remoteStreams = remoteStreamsRef.current
+    const pendingCandidates = pendingCandidatesRef.current
 
     return () => {
       peers.forEach((peer) => peer.pc.close())
       peers.clear()
       remoteStreams.clear()
+      pendingCandidates.clear()
 
       // Detach first: a discarded socket must not write state belonging to the
       // socket that replaced it.
@@ -404,6 +450,7 @@ export default function useRoom(tracksRef) {
     peersRef.current.clear()
     remoteStreamsRef.current.clear()
     participantNamesRef.current.clear()
+    pendingCandidatesRef.current.clear()
 
     // Tell the server explicitly - the socket itself stays open so this
     // connection can create/join another room next, which means the server
