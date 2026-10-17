@@ -7,32 +7,52 @@ export default function Room({
   me,
   participants,
   localStream,
+  localScreenStream,
   remoteStreams,
+  remoteScreenStreams = {},
   remoteMedia,
   media,
   onLeave,
   messages,
   onSendMessage,
 }) {
-  // With just one person in the room (yourself, before anyone else has
-  // joined), that person IS the active screen by default - there's no
-  // meaningful "gallery" to show for a party of one. Once someone else is
-  // there, it defaults back to a gallery, and clicking any tile promotes
-  // that person to the large view with everyone else in a thumbnail strip.
-  const [pinnedId, setPinnedId] = useState(null)
+  const [manualPinnedId, setManualPinnedId] = useState(null)
 
-  // Built from the room roster, not from remoteStreams: a participant whose
-  // camera and mic are both off never produces a track, so ontrack never
-  // fires for them - keying tiles off remoteStreams instead of participants
-  // would make them invisible entirely, not just show a placeholder, and it
-  // would also miscount solo/gallery mode below.
-  const tiles = [
+  const screenTiles = []
+  if (media.screenOn && localScreenStream) {
+    screenTiles.push({
+      id: `screen-${me?.clientId ?? 'local'}`,
+      name: me ? `${me.name} (Screen)` : 'Your Screen',
+      stream: localScreenStream,
+      muted: true,
+      showVideo: true,
+      isScreen: true,
+    })
+  }
+
+  participants.forEach((participant) => {
+    const isSharing = remoteMedia[participant.clientId]?.screenSharing
+    const screenStream = remoteScreenStreams[participant.clientId]
+    if (isSharing || screenStream) {
+      screenTiles.push({
+        id: `screen-${participant.clientId}`,
+        name: `${participant.name}'s Screen`,
+        stream: screenStream ?? null,
+        muted: false,
+        showVideo: true,
+        isScreen: true,
+      })
+    }
+  })
+
+  const cameraTiles = [
     {
       id: me?.clientId ?? 'local',
       name: me ? `${me.name} (you)` : 'You',
       stream: localStream,
       muted: true,
       showVideo: media.cameraOn,
+      isScreen: false,
     },
     ...participants.map((participant) => ({
       id: participant.clientId,
@@ -40,15 +60,24 @@ export default function Room({
       stream: remoteStreams[participant.clientId] ?? null,
       muted: false,
       showVideo: remoteMedia[participant.clientId]?.cameraOn ?? false,
+      isScreen: false,
     })),
   ]
 
-  const togglePin = (id) => setPinnedId((prev) => (prev === id ? null : id))
+  const tiles = [...screenTiles, ...cameraTiles]
+
+  const defaultPinnedId = screenTiles.length > 0 ? screenTiles[0].id : null
+  const effectivePinnedId = manualPinnedId === 'none' ? null : (manualPinnedId ?? defaultPinnedId)
+
+  const togglePin = (id) => {
+    setManualPinnedId((prev) => {
+      const active = prev === 'none' ? null : (prev ?? defaultPinnedId)
+      return active === id ? 'none' : id
+    })
+  }
 
   const soloTile = tiles.length === 1 ? tiles[0] : null
-  // If the pinned person left, tiles.find here simply returns undefined and
-  // the gallery renders instead - no separate cleanup needed for that case.
-  const pinnedTile = soloTile ?? tiles.find((tile) => tile.id === pinnedId)
+  const pinnedTile = soloTile ?? tiles.find((tile) => tile.id === effectivePinnedId)
   const otherTiles = pinnedTile && !soloTile ? tiles.filter((tile) => tile.id !== pinnedTile.id) : []
 
   return (
@@ -64,6 +93,7 @@ export default function Room({
                 showVideo={tile.showVideo}
                 label={tile.name}
                 size="small"
+                isScreen={tile.isScreen}
                 onClick={() => togglePin(tile.id)}
               />
             ))}
@@ -80,6 +110,7 @@ export default function Room({
                   showVideo={pinnedTile.showVideo}
                   label={pinnedTile.name}
                   size="large"
+                  isScreen={pinnedTile.isScreen}
                   active={!soloTile}
                   onClick={soloTile ? undefined : () => togglePin(pinnedTile.id)}
                 />
@@ -93,6 +124,7 @@ export default function Room({
                     muted={tile.muted}
                     showVideo={tile.showVideo}
                     label={tile.name}
+                    isScreen={tile.isScreen}
                     onClick={() => togglePin(tile.id)}
                   />
                 ))}
@@ -104,8 +136,10 @@ export default function Room({
               <MediaControls
                 cameraOn={media.cameraOn}
                 micOn={media.micOn}
+                screenOn={media.screenOn}
                 onToggleCamera={media.toggleCamera}
                 onToggleMic={media.toggleMic}
+                onToggleScreenShare={media.toggleScreenShare}
                 onLeave={onLeave}
               />
             </div>

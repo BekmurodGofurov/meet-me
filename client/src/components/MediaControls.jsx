@@ -1,6 +1,14 @@
-import { CameraIcon, LeaveIcon, MicIcon } from './icons'
+import { CameraIcon, LeaveIcon, MicIcon, ScreenShareIcon } from './icons'
 
-export default function MediaControls({ cameraOn, micOn, onToggleCamera, onToggleMic, onLeave }) {
+export default function MediaControls({
+  cameraOn,
+  micOn,
+  screenOn = false,
+  onToggleCamera,
+  onToggleMic,
+  onToggleScreenShare,
+  onLeave,
+}) {
   return (
     <div className="media-controls">
       <button
@@ -21,6 +29,16 @@ export default function MediaControls({ cameraOn, micOn, onToggleCamera, onToggl
         title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
       >
         <CameraIcon off={!cameraOn} />
+      </button>
+
+      <button
+        className={`icon-button icon-button--screen ${screenOn ? 'is-on is-sharing' : ''}`}
+        onClick={onToggleScreenShare}
+        aria-pressed={Boolean(screenOn)}
+        aria-label={screenOn ? 'Stop sharing screen' : 'Share screen'}
+        title={screenOn ? 'Stop sharing screen' : 'Share screen'}
+      >
+        <ScreenShareIcon off={!screenOn} />
       </button>
 
       <button

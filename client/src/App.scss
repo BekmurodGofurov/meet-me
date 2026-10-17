@@ -278,6 +278,26 @@ input {
     border-color: #e05555;
   }
 
+  &--screen {
+    &:not(.is-on) {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.35);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+    }
+
+    &.is-sharing {
+      background: #4caf7d;
+      border-color: #4caf7d;
+
+      &:hover {
+        background: #3fa16e;
+      }
+    }
+  }
+
   &--leave {
     margin-left: 10px;
 
@@ -290,6 +310,15 @@ input {
 .rejoining {
   opacity: 0.8;
   font-size: 15px;
+  margin: 0;
+
+  &-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin: auto 0;
+  }
 }
 
 .video-grid {
@@ -489,5 +518,21 @@ input {
   &.is-active .video-tile__frame {
     outline: 2px solid #4caf7d;
     outline-offset: 2px;
+  }
+
+  &--screen {
+    .video-tile__frame {
+      background: #000;
+    }
+
+    video {
+      object-fit: contain;
+      background: #000;
+    }
+
+    .video-tile__placeholder {
+      background: #111;
+      color: #4caf7d;
+    }
   }
 }

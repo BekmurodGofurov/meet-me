@@ -24,13 +24,20 @@ export default function App() {
       <Topbar connectionStatus={room.connectionStatus} roomId={room.currentRoom} />
 
       {room.rejoining ? (
-        <p className="rejoining">Rejoining your room...</p>
+        <div className="rejoining-container">
+          <p className="rejoining">Rejoining your room...</p>
+          <button className="is-secondary" onClick={room.cancelRejoin}>
+            Go to lobby
+          </button>
+        </div>
       ) : room.currentRoom ? (
         <Room
           me={room.me}
           participants={room.participants}
           localStream={media.stream}
+          localScreenStream={media.screenStream}
           remoteStreams={room.remoteStreams}
+          remoteScreenStreams={room.remoteScreenStreams}
           remoteMedia={room.remoteMedia}
           media={media}
           onLeave={room.leaveRoom}
