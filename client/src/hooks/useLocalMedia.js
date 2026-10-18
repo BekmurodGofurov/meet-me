@@ -43,6 +43,10 @@ export default function useLocalMedia(onTrackChangedRef) {
       setMediaError('')
 
       try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('MediaDevices API is not available. Please ensure you are using a secure connection (HTTPS).')
+        }
+
         const media = await navigator.mediaDevices.getUserMedia(
           kind === 'video' ? { video: true } : { audio: true },
         )
@@ -55,12 +59,30 @@ export default function useLocalMedia(onTrackChangedRef) {
         if (kind === 'video') setCameraOn(true)
         else setMicOn(true)
       } catch (err) {
-        console.error(`Failed to start ${kind}`, err)
-        setMediaError(
-          kind === 'video'
-            ? 'Could not access the camera. Check browser permissions.'
-            : 'Could not access the microphone. Check browser permissions.',
-        )
+        console.error(`Failed to start ${kind}:`, err.name, err.message, err)
+        let message = ''
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          message =
+            kind === 'video'
+              ? 'Could not access the camera. Permission was denied in browser or system settings.'
+              : 'Could not access the microphone. Permission was denied in browser or system settings.'
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          message =
+            kind === 'video'
+              ? 'Could not access the camera. It may be in use by another application (FaceTime, Zoom, etc.).'
+              : 'Could not access the microphone. It may be in use by another application.'
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          message =
+            kind === 'video'
+              ? 'Could not find a camera. Please check your camera connection.'
+              : 'Could not find a microphone. Please check your microphone connection.'
+        } else {
+          message =
+            kind === 'video'
+              ? `Could not access the camera. ${err.message || 'Check browser permissions.'}`
+              : `Could not access the microphone. ${err.message || 'Check browser permissions.'}`
+        }
+        setMediaError(message)
       }
     },
     [onTrackChangedRef, rebuildStream],
