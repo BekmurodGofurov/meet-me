@@ -36,7 +36,11 @@ export default defineConfig(({ mode }) => {
       // ignore
     }
   }
-  backendPort = backendPort || '8090'
+  if (process.env.E2E) {
+    backendPort = '8080'
+  } else {
+    backendPort = backendPort || env.PORT || '8080'
+  }
 
   const backendTarget = env.BACKEND_TARGET || `ws://localhost:${backendPort}`
 
