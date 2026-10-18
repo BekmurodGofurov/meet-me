@@ -68,9 +68,10 @@ export default function useRoom(tracksRef) {
   const wsRef = useRef(null)
   const peersRef = useRef(new Map())
   const remoteStreamsRef = useRef(new Map())
+  const remoteScreenStreamsRef = useRef(new Map())
   const pendingCandidatesRef = useRef(new Map())
   const myIdRef = useRef(null)
-  const mediaStateRef = useRef({ cameraOn: false, micOn: false })
+  const mediaStateRef = useRef({ cameraOn: false, micOn: false, screenSharing: false })
   // peer-left only carries a clientId, not a name - by the time it arrives
   // the name has to already be known somewhere that isn't a stale closure
   // over participants state, so it's kept here instead.
@@ -85,6 +86,7 @@ export default function useRoom(tracksRef) {
   const [me, setMe] = useState(null)
   const [participants, setParticipants] = useState([])
   const [remoteStreams, setRemoteStreams] = useState({})
+  const [remoteScreenStreams, setRemoteScreenStreams] = useState({})
   const [remoteMedia, setRemoteMedia] = useState({})
   const [roomError, setRoomError] = useState('')
   const [messages, setMessages] = useState([])
@@ -130,7 +132,7 @@ export default function useRoom(tracksRef) {
         makingOffer: false,
         ignoreOffer: false,
         settingRemoteAnswer: false,
-        senders: { video: null, audio: null },
+        senders: { video: null, audio: null, screen: null },
       }
 
       pc.onnegotiationneeded = async () => {
@@ -149,29 +151,57 @@ export default function useRoom(tracksRef) {
         if (candidate) post({ type: 'ice-candidate', targetId: peerId, payload: candidate })
       }
 
-      pc.ontrack = ({ track }) => {
-        let stream = remoteStreamsRef.current.get(peerId)
-        if (!stream) {
-          stream = new MediaStream()
+      pc.ontrack = (event) => {
+        const { track } = event
+        const transceivers = pc.getTransceivers ? pc.getTransceivers() : []
+        const videoTransceivers = transceivers.filter(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video',
+        )
+        const isScreen =
+          event.transceiver && videoTransceivers.length > 1
+            ? event.transceiver === videoTransceivers[1]
+            : track.kind === 'video' &&
+              (remoteStreamsRef.current.get(peerId)?.getVideoTracks()?.length > 0 ||
+                peer.senders.screen?.track === track)
+
+        if (isScreen) {
+          let screenStream = remoteScreenStreamsRef.current.get(peerId)
+          if (!screenStream) {
+            screenStream = new MediaStream()
+          }
+          if (!screenStream.getTracks().some((t) => t.id === track.id)) {
+            screenStream.addTrack(track)
+          }
+          const updated = new MediaStream(screenStream.getTracks())
+          remoteScreenStreamsRef.current.set(peerId, updated)
+          setRemoteScreenStreams((prev) => ({ ...prev, [peerId]: updated }))
+        } else {
+          let stream = remoteStreamsRef.current.get(peerId)
+          if (!stream) {
+            stream = new MediaStream()
+          }
+          if (!stream.getTracks().some((existingTrack) => existingTrack.id === track.id)) {
+            stream.addTrack(track)
+          }
+          const updatedStream = new MediaStream(stream.getTracks())
+          remoteStreamsRef.current.set(peerId, updatedStream)
+          setRemoteStreams((prev) => ({ ...prev, [peerId]: updatedStream }))
         }
-        if (!stream.getTracks().some((existingTrack) => existingTrack.id === track.id)) {
-          stream.addTrack(track)
-        }
-        const updatedStream = new MediaStream(stream.getTracks())
-        remoteStreamsRef.current.set(peerId, updatedStream)
-        setRemoteStreams((prev) => ({ ...prev, [peerId]: updatedStream }))
       }
 
-      const { video, audio } = tracksRef.current
+      const { video, audio, screen } = tracksRef.current
 
       // Send what exists now; ask to receive the kinds we can't send yet, so
       // there is always something to negotiate and the m-lines exist for a
-      // track switched on later.
+      // track switched on later. Order is deterministic: [camera, audio, screen].
       if (video) peer.senders.video = pc.addTrack(video)
       else pc.addTransceiver('video', { direction: 'recvonly' })
 
       if (audio) peer.senders.audio = pc.addTrack(audio)
       else pc.addTransceiver('audio', { direction: 'recvonly' })
+
+      if (screen) peer.senders.screen = pc.addTrack(screen)
+      else pc.addTransceiver('video', { direction: 'recvonly' })
 
       peersRef.current.set(peerId, peer)
       return peer
@@ -181,9 +211,15 @@ export default function useRoom(tracksRef) {
       peersRef.current.get(peerId)?.pc.close()
       peersRef.current.delete(peerId)
       remoteStreamsRef.current.delete(peerId)
+      remoteScreenStreamsRef.current.delete(peerId)
       pendingCandidatesRef.current.delete(peerId)
 
       setRemoteStreams((prev) => {
+        const next = { ...prev }
+        delete next[peerId]
+        return next
+      })
+      setRemoteScreenStreams((prev) => {
         const next = { ...prev }
         delete next[peerId]
         return next
@@ -330,8 +366,20 @@ export default function useRoom(tracksRef) {
           case 'media-state':
             setRemoteMedia((prev) => ({
               ...prev,
-              [data.from]: { cameraOn: data.cameraOn, micOn: data.micOn },
+              [data.from]: {
+                cameraOn: data.cameraOn,
+                micOn: data.micOn,
+                ...(data.screenSharing !== undefined && { screenSharing: Boolean(data.screenSharing) }),
+              },
             }))
+            if (!data.screenSharing) {
+              remoteScreenStreamsRef.current.delete(data.from)
+              setRemoteScreenStreams((prev) => {
+                const next = { ...prev }
+                delete next[data.from]
+                return next
+              })
+            }
             break
 
           case 'chat-message':
@@ -360,12 +408,14 @@ export default function useRoom(tracksRef) {
 
     const peers = peersRef.current
     const remoteStreams = remoteStreamsRef.current
+    const remoteScreenStreams = remoteScreenStreamsRef.current
     const pendingCandidates = pendingCandidatesRef.current
 
     return () => {
       peers.forEach((peer) => peer.pc.close())
       peers.clear()
       remoteStreams.clear()
+      remoteScreenStreams.clear()
       pendingCandidates.clear()
 
       // Detach first: a discarded socket must not write state belonging to the
@@ -386,7 +436,8 @@ export default function useRoom(tracksRef) {
   const publishTrack = useCallback(
     (kind, track) => {
       if (kind === 'video') mediaStateRef.current.cameraOn = Boolean(track)
-      else mediaStateRef.current.micOn = Boolean(track)
+      else if (kind === 'audio') mediaStateRef.current.micOn = Boolean(track)
+      else if (kind === 'screen') mediaStateRef.current.screenSharing = Boolean(track)
 
       peersRef.current.forEach((peer) => {
         const { pc, senders } = peer
@@ -404,9 +455,21 @@ export default function useRoom(tracksRef) {
         // Reuse the receive-only m-line created for this kind if there is one,
         // rather than growing the session description on every toggle. Either
         // path triggers onnegotiationneeded, which republishes the session.
-        const reusable = pc
-          .getTransceivers()
-          .find((t) => t.receiver.track?.kind === kind && !t.sender.track)
+        const transceivers = pc.getTransceivers ? pc.getTransceivers() : []
+        const videoTransceivers = transceivers.filter(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video',
+        )
+
+        let reusable = null
+        if (kind === 'video') {
+          reusable = videoTransceivers[0]
+        } else if (kind === 'screen') {
+          reusable = videoTransceivers[1]
+        } else if (kind === 'audio') {
+          reusable = transceivers.find(
+            (t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio',
+          )
+        }
 
         if (reusable) {
           reusable.direction = 'sendrecv'
@@ -449,6 +512,7 @@ export default function useRoom(tracksRef) {
     peersRef.current.forEach((peer) => peer.pc.close())
     peersRef.current.clear()
     remoteStreamsRef.current.clear()
+    remoteScreenStreamsRef.current.clear()
     participantNamesRef.current.clear()
     pendingCandidatesRef.current.clear()
 
@@ -461,6 +525,7 @@ export default function useRoom(tracksRef) {
     setMe(null)
     setParticipants([])
     setRemoteStreams({})
+    setRemoteScreenStreams({})
     setRemoteMedia({})
     setRoomError('')
     setMessages([])
@@ -484,15 +549,23 @@ export default function useRoom(tracksRef) {
     [send, me],
   )
 
+  const cancelRejoin = useCallback(() => {
+    clearSession()
+    storedSessionRef.current = null
+    setRejoining(false)
+  }, [])
+
   return {
     connectionStatus,
     currentRoom,
     me,
     participants,
     remoteStreams,
+    remoteScreenStreams,
     remoteMedia,
     roomError,
     rejoining,
+    cancelRejoin,
     rememberedName,
     messages,
     publishTrack,

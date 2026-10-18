@@ -61,4 +61,11 @@ describe('VideoTile', () => {
     expect(figure).toHaveClass('video-tile--large')
     expect(figure).toHaveClass('is-active')
   })
+
+  it('applies video-tile--screen class when isScreen is true', () => {
+    render(<VideoTile stream={null} label="Screen - Bekmurod" isScreen />)
+    const figure = screen.getByText('Screen - Bekmurod').closest('figure')
+
+    expect(figure).toHaveClass('video-tile--screen')
+  })
 })

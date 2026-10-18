@@ -175,6 +175,7 @@ export function createSignalingServer(server, { roomGraceMs = 30000, secretKey }
                     from: clientId,
                     cameraOn: Boolean(parsedData.cameraOn),
                     micOn: Boolean(parsedData.micOn),
+                    screenSharing: Boolean(parsedData.screenSharing),
                   }),
                 );
               }

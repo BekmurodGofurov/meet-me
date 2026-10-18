@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { ScreenShareIcon } from './icons'
 
 export default function VideoTile({
   stream,
@@ -8,6 +9,7 @@ export default function VideoTile({
   onClick,
   size = 'normal',
   active = false,
+  isScreen = false,
 }) {
   const videoRef = useRef(null)
 
@@ -36,7 +38,7 @@ export default function VideoTile({
 
   return (
     <figure
-      className={`video-tile video-tile--${size} ${active ? 'is-active' : ''} ${clickable ? 'is-clickable' : ''}`}
+      className={`video-tile video-tile--${size} ${isScreen ? 'video-tile--screen' : ''} ${active ? 'is-active' : ''} ${clickable ? 'is-clickable' : ''}`}
       onClick={onClick}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
@@ -57,7 +59,11 @@ export default function VideoTile({
           playsInline
           className={showVideo && stream ? '' : 'is-hidden'}
         />
-        {(!showVideo || !stream) && <div className="video-tile__placeholder">{initial}</div>}
+        {(!showVideo || !stream) && (
+          <div className="video-tile__placeholder">
+            {isScreen ? <ScreenShareIcon /> : initial}
+          </div>
+        )}
       </div>
       <figcaption>{label}</figcaption>
     </figure>

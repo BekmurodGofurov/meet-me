@@ -131,4 +131,72 @@ describe('useLocalMedia', () => {
 
     expect(result.current.mediaError).toMatch(/microphone/i)
   })
+
+  it('starts with screen sharing off and no screen stream', () => {
+    const { result } = setup()
+
+    expect(result.current.screenOn).toBe(false)
+    expect(result.current.screenStream).toBeNull()
+  })
+
+  it('toggling screen share requests getDisplayMedia and notifies onTrackChangedRef', async () => {
+    const { result, onTrackChangedRef } = setup()
+
+    await act(async () => {
+      await result.current.toggleScreenShare()
+    })
+
+    expect(result.current.screenOn).toBe(true)
+    expect(result.current.screenStream).not.toBeNull()
+    expect(onTrackChangedRef.current).toHaveBeenCalledWith('screen', expect.objectContaining({ kind: 'video' }))
+  })
+
+  it('camera and screen can both be active simultaneously (dual stream)', async () => {
+    const { result } = setup()
+
+    await act(async () => {
+      await result.current.toggleCamera()
+    })
+    await act(async () => {
+      await result.current.toggleScreenShare()
+    })
+
+    expect(result.current.cameraOn).toBe(true)
+    expect(result.current.screenOn).toBe(true)
+    expect(result.current.stream).not.toBeNull()
+    expect(result.current.screenStream).not.toBeNull()
+
+    // Turning off camera leaves screen share intact
+    await act(async () => {
+      await result.current.toggleCamera()
+    })
+    expect(result.current.cameraOn).toBe(false)
+    expect(result.current.screenOn).toBe(true)
+
+    // Turning off screen share leaves camera intact if turned back on
+    await act(async () => {
+      await result.current.toggleCamera()
+      await result.current.toggleScreenShare()
+    })
+    expect(result.current.cameraOn).toBe(true)
+    expect(result.current.screenOn).toBe(false)
+  })
+
+  it('browser stop sharing (track.onended) stops screen share and resets state', async () => {
+    const { result, onTrackChangedRef } = setup()
+
+    await act(async () => {
+      await result.current.toggleScreenShare()
+    })
+    expect(result.current.screenOn).toBe(true)
+
+    const screenTrack = result.current.screenStream.getTracks()[0]
+    act(() => {
+      screenTrack.onended?.()
+    })
+
+    expect(result.current.screenOn).toBe(false)
+    expect(result.current.screenStream).toBeNull()
+    expect(onTrackChangedRef.current).toHaveBeenLastCalledWith('screen', null)
+  })
 })

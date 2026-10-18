@@ -237,6 +237,45 @@ describe('media-state', () => {
 
     expect(result.current.remoteMedia).toEqual({ 'peer-1': { cameraOn: true, micOn: false } })
   })
+
+  it('updates remoteMedia with screenSharing status when sent', async () => {
+    const { result, socket } = await connectAndOpen()
+
+    await act(async () => {
+      socket.receive({ type: 'media-state', from: 'peer-1', cameraOn: true, micOn: false, screenSharing: true })
+    })
+
+    expect(result.current.remoteMedia).toEqual({
+      'peer-1': { cameraOn: true, micOn: false, screenSharing: true },
+    })
+  })
+
+  it('publishTrack with screen updates local media state and broadcasts over socket', async () => {
+    const { result, socket } = await connectAndOpen()
+    const fakeScreenTrack = new FakeMediaStreamTrack('video')
+
+    act(() => {
+      result.current.publishTrack('screen', fakeScreenTrack)
+    })
+
+    expect(socket.lastSent()).toEqual({
+      type: 'media-state',
+      cameraOn: false,
+      micOn: false,
+      screenSharing: true,
+    })
+
+    act(() => {
+      result.current.publishTrack('screen', null)
+    })
+
+    expect(socket.lastSent()).toEqual({
+      type: 'media-state',
+      cameraOn: false,
+      micOn: false,
+      screenSharing: false,
+    })
+  })
 })
 
 describe('chat', () => {

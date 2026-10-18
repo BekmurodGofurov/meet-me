@@ -25,6 +25,14 @@ export class FakeMediaStream {
   getTracks() {
     return this._tracks
   }
+
+  getVideoTracks() {
+    return this._tracks.filter((t) => t.kind === 'video')
+  }
+
+  getAudioTracks() {
+    return this._tracks.filter((t) => t.kind === 'audio')
+  }
 }
 
 export function installMediaMocks() {
@@ -35,11 +43,15 @@ export function installMediaMocks() {
     return new FakeMediaStream([new FakeMediaStreamTrack(kind)])
   })
 
+  const getDisplayMedia = vi.fn(async () => {
+    return new FakeMediaStream([new FakeMediaStreamTrack('video')])
+  })
+
   Object.defineProperty(globalThis.navigator, 'mediaDevices', {
-    value: { getUserMedia },
+    value: { getUserMedia, getDisplayMedia },
     configurable: true,
     writable: true,
   })
 
-  return { getUserMedia }
+  return { getUserMedia, getDisplayMedia }
 }

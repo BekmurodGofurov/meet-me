@@ -30,6 +30,17 @@ export function CameraIcon({ off = false }) {
   )
 }
 
+export function ScreenShareIcon({ off = false }) {
+  return (
+    <svg {...base} aria-hidden="true">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+      {off && <line x1="3" y1="3" x2="21" y2="21" />}
+    </svg>
+  )
+}
+
 export function LeaveIcon() {
   // The standard filled "end call" handset glyph, not built from base's
   // stroke style - this one needs to read as a solid phone silhouette.
@@ -39,3 +50,4 @@ export function LeaveIcon() {
     </svg>
   )
 }
+

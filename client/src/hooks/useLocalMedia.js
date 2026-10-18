@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // browser asks for one permission at the moment it is actually needed instead
 // of demanding both on page load.
 export default function useLocalMedia(onTrackChangedRef) {
-  const tracksRef = useRef({ video: null, audio: null })
+  const tracksRef = useRef({ video: null, audio: null, screen: null })
 
   const [stream, setStream] = useState(null)
+  const [screenStream, setScreenStream] = useState(null)
   const [cameraOn, setCameraOn] = useState(false)
   const [micOn, setMicOn] = useState(false)
+  const [screenOn, setScreenOn] = useState(false)
   const [mediaError, setMediaError] = useState('')
 
   const rebuildStream = useCallback(() => {
@@ -64,6 +66,54 @@ export default function useLocalMedia(onTrackChangedRef) {
     [onTrackChangedRef, rebuildStream],
   )
 
+  const stopScreenShare = useCallback(() => {
+    const track = tracksRef.current.screen
+    if (track) {
+      track.stop()
+      tracksRef.current.screen = null
+    }
+
+    setScreenStream(null)
+    setScreenOn(false)
+    onTrackChangedRef.current?.('screen', null)
+  }, [onTrackChangedRef])
+
+  const startScreenShare = useCallback(async () => {
+    setMediaError('')
+
+    try {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        throw new Error('Screen sharing is not supported by your browser.')
+      }
+
+      const displayMedia = await navigator.mediaDevices.getDisplayMedia({ video: true })
+      const track = displayMedia.getVideoTracks?.()[0] ?? displayMedia.getTracks()[0]
+      if (!track) return
+
+      tracksRef.current.screen = track
+      const nextStream = new MediaStream([track])
+      setScreenStream(nextStream)
+      setScreenOn(true)
+
+      // Handle native browser floating "Stop sharing" button
+      track.onended = () => {
+        stopScreenShare()
+      }
+
+      onTrackChangedRef.current?.('screen', track)
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') {
+        console.error('Failed to start screen share', err)
+        setMediaError('Could not share screen. Check browser permissions.')
+      }
+    }
+  }, [onTrackChangedRef, stopScreenShare])
+
+  const toggleScreenShare = useCallback(
+    () => (screenOn ? stopScreenShare() : startScreenShare()),
+    [screenOn, stopScreenShare, startScreenShare],
+  )
+
   const toggleCamera = useCallback(
     () => (cameraOn ? disable('video') : enable('video')),
     [cameraOn, disable, enable],
@@ -79,8 +129,20 @@ export default function useLocalMedia(onTrackChangedRef) {
     return () => {
       tracks.video?.stop()
       tracks.audio?.stop()
+      tracks.screen?.stop()
     }
   }, [])
 
-  return { stream, cameraOn, micOn, mediaError, tracksRef, toggleCamera, toggleMic }
+  return {
+    stream,
+    screenStream,
+    cameraOn,
+    micOn,
+    screenOn,
+    mediaError,
+    tracksRef,
+    toggleCamera,
+    toggleMic,
+    toggleScreenShare,
+  }
 }
