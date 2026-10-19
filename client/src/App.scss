@@ -385,6 +385,26 @@ input {
       align-self: flex-end;
       background: #6b4de6;
       color: #fff;
+
+      .chat__link {
+        color: #90caf9;
+
+        &:hover {
+          color: #bbdefb;
+        }
+      }
+    }
+  }
+
+  &__link {
+    color: var(--chat-link, #2563eb);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    word-break: break-all;
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: var(--chat-link-hover, #1d4ed8);
     }
   }
 
