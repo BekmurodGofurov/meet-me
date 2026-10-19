@@ -60,7 +60,7 @@ export default function useLocalMedia(onTrackChangedRef) {
         else setMicOn(true)
       } catch (err) {
         console.error(`Failed to start ${kind}:`, err.name, err.message, err)
-        let message = ''
+        let message
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           message =
             kind === 'video'
