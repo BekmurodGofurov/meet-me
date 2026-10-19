@@ -1,4 +1,49 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+
+const URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi
+
+function renderMessageContent(text) {
+  if (!text) return null
+
+  const parts = text.split(URL_REGEX)
+
+  return parts.map((part, index) => {
+    if (!part) return null
+
+    if (/^(https?:\/\/|www\.)/i.test(part)) {
+      let url = part
+      let trailing = ''
+      const trailingPunctMatch = url.match(/[.,!?:;]+$/)
+      if (trailingPunctMatch) {
+        trailing = trailingPunctMatch[0]
+        url = url.slice(0, -trailing.length)
+      }
+
+      if (url.endsWith(')') && !url.includes('(')) {
+        trailing = ')' + trailing
+        url = url.slice(0, -1)
+      }
+
+      const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+
+      return (
+        <Fragment key={index}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="chat__link"
+          >
+            {url}
+          </a>
+          {trailing}
+        </Fragment>
+      )
+    }
+
+    return part
+  })
+}
 
 export default function Chat({ messages, myId, onSend }) {
   const [text, setText] = useState('')
@@ -24,7 +69,7 @@ export default function Chat({ messages, myId, onSend }) {
         {messages.map((message) =>
           message.kind === 'system' ? (
             <li key={message.id} className={`chat__system chat__system--${message.tone}`}>
-              {message.text}
+              {renderMessageContent(message.text)}
             </li>
           ) : (
             <li
@@ -34,7 +79,7 @@ export default function Chat({ messages, myId, onSend }) {
               <span className="chat__author">
                 {message.from === myId ? 'You' : message.fromName}
               </span>
-              <span className="chat__text">{message.text}</span>
+              <span className="chat__text">{renderMessageContent(message.text)}</span>
             </li>
           ),
         )}

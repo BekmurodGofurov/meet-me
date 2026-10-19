@@ -76,4 +76,78 @@ describe('Chat', () => {
 
     expect(onSend).not.toHaveBeenCalled()
   })
+
+  it('renders URLs as clickable links with target="_blank" and rel="noopener noreferrer"', () => {
+    const messages = [
+      {
+        id: '1',
+        kind: 'chat',
+        from: 'peer-1',
+        fromName: 'Aziz',
+        text: 'Check this: https://example.com/test for info',
+      },
+    ]
+    render(<Chat messages={messages} myId="me" onSend={() => {}} />)
+
+    const link = screen.getByRole('link', { name: 'https://example.com/test' })
+    expect(link).toBeInTheDocument()
+    expect(link).toHaveAttribute('href', 'https://example.com/test')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(link).toHaveClass('chat__link')
+  })
+
+  it('handles www. URLs by prepending https:// in href', () => {
+    const messages = [
+      {
+        id: '1',
+        kind: 'chat',
+        from: 'me',
+        fromName: 'Bekmurod',
+        text: 'Visit www.google.com today',
+      },
+    ]
+    render(<Chat messages={messages} myId="me" onSend={() => {}} />)
+
+    const link = screen.getByRole('link', { name: 'www.google.com' })
+    expect(link).toBeInTheDocument()
+    expect(link).toHaveAttribute('href', 'https://www.google.com')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('handles trailing punctuation gracefully without including it in href', () => {
+    const messages = [
+      {
+        id: '1',
+        kind: 'chat',
+        from: 'peer-1',
+        fromName: 'Aziz',
+        text: 'Look at https://github.com.',
+      },
+    ]
+    render(<Chat messages={messages} myId="me" onSend={() => {}} />)
+
+    const link = screen.getByRole('link', { name: 'https://github.com' })
+    expect(link).toBeInTheDocument()
+    expect(link).toHaveAttribute('href', 'https://github.com')
+    expect(screen.getByText(/Look at/)).toHaveTextContent('Look at https://github.com.')
+  })
+
+  it('renders multiple links within a single message', () => {
+    const messages = [
+      {
+        id: '1',
+        kind: 'chat',
+        from: 'me',
+        fromName: 'Bekmurod',
+        text: 'Links: https://site1.com and https://site2.org/page',
+      },
+    ]
+    render(<Chat messages={messages} myId="me" onSend={() => {}} />)
+
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(2)
+    expect(links[0]).toHaveAttribute('href', 'https://site1.com')
+    expect(links[1]).toHaveAttribute('href', 'https://site2.org/page')
+  })
 })
