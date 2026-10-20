@@ -56,21 +56,9 @@
 
 ## Getting Started
 
-The fastest way to experience Meet-Me is with the **[Live Demo](https://meet-me.bekmurod.uz)**. Open the link, create a room, share the 6-character code, and start conferencing in seconds.
+The fastest way to experience Meet-Me is with the [Live Demo](https://meet-me.bekmurod.uz). Create a room, share the 6-character code, and start video conferencing immediately in your browser.
 
-To set up Meet-Me locally on your machine:
-
-```bash
-# Clone the repository
-git clone https://github.com/BekmurodGofurov/meet-me.git && cd meet-me
-
-# Quick run (see Installation Guide for details)
-cp .env.example .env
-npm --prefix backend install && npm --prefix backend start
-npm --prefix client install && npm --prefix client run dev
-```
-
-For complete step-by-step setup instructions, environment variable descriptions, Docker commands, and local SSL certificates for mobile device testing, please visit the **[Installation Guide](INSTALLATION.md)**.
+To set up and run Meet-Me locally on your machine, visit the [Installation Guide](INSTALLATION.md).
 
 ## About Meet-Me
 
