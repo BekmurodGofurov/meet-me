@@ -1,323 +1,357 @@
-# Meet-Me 📹⚡
+<p align="center">
+  <a href="https://meet-me.bekmurod.uz" target="_blank" rel="noopener noreferrer">
+    <img src="client/public/favicon.svg" alt="Meet-Me Logo" width="84" height="84" />
+  </a>
+</p>
 
-> A modern, lightweight, peer-to-peer video conferencing and real-time collaboration platform built from scratch with **WebRTC (Full Mesh Topology)** and **WebSocket Signaling**.
+<h1 align="center">
+  Meet-Me
+</h1>
 
-[![CI / CD](https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml/badge.svg)](https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml)
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-meet--me.bekmurod.uz-2563eb?style=flat&logo=googlechrome&logoColor=white)](https://meet-me.bekmurod.uz)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.0.0-339933?style=flat&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-19.2-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?style=flat&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![WebRTC](https://img.shields.io/badge/WebRTC-P2P%20Mesh-orange?style=flat&logo=webrtc&logoColor=white)](https://webrtc.org/)
-[![Playwright](https://img.shields.io/badge/E2E-Playwright-45ba4b?style=flat&logo=playwright&logoColor=white)](https://playwright.dev/)
-[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License: ISC](https://img.shields.io/badge/License-ISC-yellow.svg)](https://opensource.org/licenses/ISC)
+<h4 align="center">
+  <a href="https://meet-me.bekmurod.uz">Live Demo</a> &nbsp;|&nbsp;
+  <a href="#-getting-started">Getting Started</a> &nbsp;|&nbsp;
+  <a href="#-features">Features</a> &nbsp;|&nbsp;
+  <a href="#-architecture--topology">Architecture</a> &nbsp;|&nbsp;
+  <a href="#-signaling-protocol-contract">Signaling Contract</a> &nbsp;|&nbsp;
+  <a href="#-testing-suite">Tests</a>
+</h4>
+
+<p align="center">
+  A modern, high-performance, peer-to-peer video conferencing and real-time collaboration engine built with <b>WebRTC (Full Mesh Topology)</b> and <b>WebSocket Signaling</b>.
+</p>
+
+<p align="center">
+  <a href="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml">
+    <img src="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml/badge.svg" alt="CI/CD Status" />
+  </a>
+  <a href="https://meet-me.bekmurod.uz">
+    <img src="https://img.shields.io/badge/Live%20Demo-meet--me.bekmurod.uz-2563eb?style=flat&logo=googlechrome&logoColor=white" alt="Live Demo" />
+  </a>
+  <a href="https://nodejs.org/">
+    <img src="https://img.shields.io/badge/Node.js-%3E%3D22.0.0-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node.js" />
+  </a>
+  <a href="https://react.dev/">
+    <img src="https://img.shields.io/badge/React-19.2-61DAFB?style=flat&logo=react&logoColor=black" alt="React 19" />
+  </a>
+  <a href="https://vitejs.dev/">
+    <img src="https://img.shields.io/badge/Vite-8.3-646CFF?style=flat&logo=vite&logoColor=white" alt="Vite" />
+  </a>
+  <a href="https://webrtc.org/">
+    <img src="https://img.shields.io/badge/WebRTC-P2P%20Mesh-orange?style=flat&logo=webrtc&logoColor=white" alt="WebRTC" />
+  </a>
+  <a href="https://playwright.dev/">
+    <img src="https://img.shields.io/badge/E2E-Playwright-45ba4b?style=flat&logo=playwright&logoColor=white" alt="Playwright E2E" />
+  </a>
+  <a href="https://opensource.org/licenses/ISC">
+    <img src="https://img.shields.io/badge/license-ISC-yellow.svg" alt="ISC License" />
+  </a>
+  <a href="https://github.com/BekmurodGofurov/meet-me/pulls">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat" alt="PRs Welcome" />
+  </a>
+</p>
 
 ---
 
-## 🌟 Overview
+## ⚡ Getting Started
 
-**Meet-Me** is an open-source, multi-party video conferencing application designed to demonstrate the fundamentals of **WebSocket signaling** and **WebRTC peer-to-peer connections** without relying on third-party media servers (SFU/MCU).
+The fastest way to experience Meet-Me is directly in your browser:
 
-### 🎯 Key Engineering Goals
+👉 **[Try Live Demo on meet-me.bekmurod.uz](https://meet-me.bekmurod.uz)**
 
-- **Strict Layer Separation:** The signaling server solely orchestrates discovery and exchanges lightweight JSON control messages (offers, answers, ICE candidates, and chat). **Zero media bytes (audio/video) ever pass through the server.**
-- **Pure Mesh Topology:** Every peer establishes direct, bi-directional `RTCPeerConnection`s with every other peer in the room (optimal for 2–6 participants).
-- **Production-Ready Resilience:** Implements the **"Perfect Negotiation"** pattern to deterministically eliminate offer/answer collisions (glare), automated session recovery on page refresh, and fallback TURN relay servers for NAT/firewall traversal.
+To run the application locally on your machine in under two minutes:
+
+```bash
+# 1. Clone repository
+git clone https://github.com/BekmurodGofurov/meet-me.git
+cd meet-me
+
+# 2. Setup environment variables
+cp .env.example .env
+
+# 3. Install dependencies
+npm --prefix backend install
+npm --prefix client install
+
+# 4. Start backend signaling service (Terminal 1)
+npm --prefix backend start
+
+# 5. Start frontend client (Terminal 2)
+npm --prefix client run dev
+```
+
+Visit [`http://localhost:5173`](http://localhost:5173) in two browser tabs or devices, create a room, share the 6-character code, and start conferencing!
+
+---
+
+## 📖 About Meet-Me
+
+**Meet-Me** is an open-source, multi-party video conferencing system engineered to demonstrate the real-world mechanics of **WebSocket-based signaling** and direct **WebRTC peer-to-peer connections**.
+
+Instead of relying on heavy media servers (like SFUs or MCUs) or commercial black-box SDKs, Meet-Me implements a pure, decentralized full-mesh architecture:
+
+- **Signaling Layer:** A lightweight, single-process Node.js WebSocket service responsible solely for room discovery, presence management, and forwarding SDP offers, answers, and ICE candidates.
+- **Media Layer:** Direct browser-to-browser encrypted audio, video, and screen sharing feeds over SRTP/UDP. **Media bytes never touch the server.**
+- **Mesh Topology:** Tailored specifically for small-group collaboration (2–6 participants), balancing resource efficiency with near-zero latency.
 
 ---
 
 ## ✨ Features
 
-- 🎥 **Multi-Party Video & Audio:** Peer-to-peer mesh conferencing supporting up to 6 participants with ultra-low latency.
-- 🖥️ **Screen Sharing with Dual Streams:** Independent screen sharing stream alongside live camera feed using dual WebRTC transceivers.
-- 📌 **Dynamic Grid & Video Pinning:** Automatic priority pinning for active screen shares with one-click manual pinning/unpinning of any participant.
-- 💬 **Real-time In-Room Chat:** Fast WebSocket text messaging featuring:
-  - Automatic URL link detection and safe rendering (`target="_blank"`, `rel="noopener noreferrer"`).
-  - Join/leave system announcements and actionable status messages.
-- 🔄 **Session Persistence & Graceful Reconnect:**
-  - Auto-rejoin via `localStorage` when refreshing the browser.
-  - Server-side **grace period timer (10s)** preserving empty rooms temporarily during quick client reloads.
-- 🔒 **Security & Protocol Integrity:**
-  - Configurable shared secret key authentication (`SECRET_KEY`) for WebSocket handshakes.
-  - Server-side identity stamping (`senderId`) preventing client impersonation.
-  - Input sanitization and name length capping (max 24 characters).
-- 🌐 **NAT Traversal (STUN / TURN):** Out-of-the-box configuration with public Google STUN and Metered TURN relays for symmetric NATs and restrictive firewalls.
-- 🩺 **Actionable Device Diagnostics:** Real-time diagnostics guiding users through browser permission errors (camera/mic blocked or unavailable).
-- 🎨 **Responsive UI & Themes:** Clean SCSS architecture with dark and light themes, responsive video grids, and mobile-friendly layouts.
+- 🎥 **Multi-Party HD Audio & Video:** True peer-to-peer mesh conferencing supporting up to 6 participants with ultra-low latency.
+- 🖥️ **Screen Sharing with Dual-Stream Support:** Share your screen while keeping your camera active using dual WebRTC transceivers.
+- 📌 **Smart Video Grid & Stream Pinning:** Automatic priority pinning for active screen shares with one-click manual focus pinning on any participant tile.
+- 💬 **In-Room Real-Time Chat:**
+  - Fast WebSocket messaging with low overhead.
+  - Automatic URL regex detection with sanitized, safe links (`target="_blank"`, `rel="noopener noreferrer"`).
+  - System event announcements (user joined, user left).
+- 🔄 **Session Persistence & Resilient Reconnection:**
+  - Tab refresh auto-reconnect via `localStorage` session state.
+  - Server-side **10-second grace period** preventing empty room cleanup during client reloads.
+- 🔒 **Security & Identity Integrity:**
+  - WebSocket authorization via shared secret key (`SECRET_KEY`).
+  - Server-enforced identity stamping (`senderId`) preventing client impersonation.
+  - Automatic name truncation and input sanitization (max 24 characters).
+- 🌐 **Comprehensive NAT Traversal (STUN / TURN):** Integrated with Google STUN and Metered TURN relays for symmetric NAT and corporate firewall traversal.
+- 🩺 **Actionable Device Diagnostics:** Informative UI banners when camera or microphone permissions are blocked or hardware is busy.
+- 🎨 **Polished Modern UI:** Responsive Sass/SCSS architecture featuring dark and light theme support across mobile, tablet, and desktop viewports.
 
 ---
 
-## 🏗️ Architecture & Topology
+## 🏛️ Architecture & Topology
 
-### 1. Signaling vs. Media Data Flow
+### 1. Separation of Concerns: Signaling vs. Media
 
 ```
-                 ┌────────────────────────────────┐
-                 │       WebSocket Server         │
-                 │   (Node.js + ws, Port 8080)    │
-                 └──────┬──────────┬──────────┬───┘
-                        │          │          │
-        SDP & ICE Relay │          │          │ SDP & ICE Relay
-                        ▼          ▼          ▼
-                 ┌──────────┐ ┌──────────┐ ┌──────────┐
-                 │ Client A │ │ Client B │ │ Client C │
-                 └────┬─────┘ └────┬─────┘ └────┬─────┘
-                      │            │            │
-                      │◄───────────┴───────────►│
-                      │  Direct WebRTC Streams  │
-                      │   (Audio / Video / Screen)
+                         ┌────────────────────────┐
+                         │   Signaling Service    │
+                         │   (Node.js + ws:8080)  │
+                         └───────────┬────────────┘
+                                     │
+                 ┌───────────────────┼───────────────────┐
+                 │ (SDP / ICE JSON)  │ (SDP / ICE JSON)  │ (SDP / ICE JSON)
+                 ▼                   ▼                   ▼
+           ┌───────────┐       ┌───────────┐       ┌───────────┐
+           │ Browser A │◄═════►│ Browser B │◄═════►│ Browser C │
+           └───────────┘       └───────────┘       └───────────┘
+                 ▲                                       ▲
+                 ╚═══════════════════════════════════════╝
+                      Direct P2P Encrypted Media
 ```
 
-| Layer | Protocol | Role | Payload |
+| Layer | Protocol | Responsibilities | Data Handled |
 |---|---|---|---|
-| **Signaling** | WebSocket (`ws://` / `wss://`) | Room management, presence, SDP exchange, ICE candidate relay, chat messages | Small JSON messages |
-| **Media** | WebRTC (`RTCPeerConnection` over SRTP/UDP) | Direct peer-to-peer audio, video, and screen share delivery | Encrypted raw media frames |
+| **Signaling Layer** | WebSocket (`ws://` / `wss://`) | Room lifecycle, presence, SDP exchange, ICE relay, text chat | Lightweight JSON control messages |
+| **Media Layer** | WebRTC (`RTCPeerConnection`) | Audio tracks, video tracks, screen sharing tracks | Direct SRTP/UDP peer streams |
 
-### 2. Full Mesh Topology
+### 2. Full Mesh Network (Up to 6 Peers)
 
-In a 6-person room, each participant maintains direct peer connections with the other 5 participants ($N \times (N - 1) / 2 = 15$ total connections across the room).
+In a 6-participant room, every browser opens an independent peer connection to every other browser in the room ($N \times (N - 1) / 2 = 15$ total connections):
 
 ```
-         Client A <===============> Client B
-            ▲   \                     /   ▲
-            ║    \                   /    ║
-            ║     ▼                 ▼     ║
-            ║   Client E <=====> Client F  ║
-            ║     ▲                 ▲     ║
-            ║    /                   \    ║
-            ▼   /                     \   ▼
-         Client C <===============> Client D
+               Client A <=====================> Client B
+                  ▲   \                             /   ▲
+                  ║    \                           /    ║
+                  ║     ▼                         ▼     ║
+                  ║   Client E <=============> Client F  ║
+                  ║     ▲                         ▲     ║
+                  ║    /                           \    ║
+                  ▼   /                             \   ▼
+               Client C <=====================> Client D
 ```
+
+### 3. "Perfect Negotiation" Pattern
+
+To prevent negotiation collisions (glare) when both peers attempt to initiate an SDP renegotiation simultaneously (e.g. both toggling cameras at once), Meet-Me follows the W3C **Perfect Negotiation** specification:
+- One peer is assigned the **polite** role (the joiner); the other is **impolite** (the host).
+- Polite peers roll back local offers if a collision is detected; impolite peers ignore conflicting incoming offers until their own is answered.
 
 ---
 
-## 📡 WebSocket Signaling Contract
+## 📡 Signaling Protocol Contract
 
-Communication between client and signaling server follows a frozen protocol:
+The communication contract between frontend clients and the signaling server is strictly typed and deterministic:
 
-| Message Type | Direction | Purpose |
-|---|---|---|
-| `create-room` | Client ➔ Server | Requests generation of a new 6-character room code |
-| `room-created` | Server ➔ Client | Confirms room creation with `roomId` and assigned `clientId` |
-| `join-room` | Client ➔ Server | Joins an existing room using a 6-character code |
-| `existing-peers`| Server ➔ Client | Returns the list of currently connected peers in the room |
-| `peer-joined` | Server ➔ Peers | Notifies existing peers that a new participant has arrived |
-| `offer` | Client ➔ Peer (via Server) | Sends an SDP offer to establish a WebRTC connection |
-| `answer` | Client ➔ Peer (via Server) | Returns an SDP answer confirming media capabilities |
-| `ice-candidate`| Client ➔ Peer (via Server) | Exchanges network connectivity candidates |
-| `media-state` | Client ➔ Peers (via Server) | Broadcasts camera, microphone, or screen sharing state changes |
-| `chat-message` | Client ➔ Peers (via Server) | Broadcasts in-room text chat |
-| `leave-room` | Client ➔ Server | Explicitly exits the room and releases resources |
-| `peer-left` | Server ➔ Peers | Notifies remaining peers to close their respective peer connections |
-| `error` | Server ➔ Client | Dispatches error notifications (e.g., room full, invalid code) |
+| Message Type | Direction | Payload Summary | Description |
+|---|---|---|---|
+| `create-room` | Client ➔ Server | `{ name: string }` | Requests a new room code |
+| `room-created` | Server ➔ Client | `{ roomId, clientId, name }` | Confirms room creation |
+| `join-room` | Client ➔ Server | `{ roomId, name }` | Joins an existing room |
+| `existing-peers`| Server ➔ Client | `{ roomId, clientId, peers: [] }` | Roster of existing room participants |
+| `peer-joined` | Server ➔ Peers | `{ clientId, name }` | Notifies room of a new joiner |
+| `offer` | Client ➔ Peer (Relay) | `{ targetId, sdp }` | WebRTC session offer |
+| `answer` | Client ➔ Peer (Relay) | `{ targetId, sdp }` | WebRTC session answer |
+| `ice-candidate`| Client ➔ Peer (Relay) | `{ targetId, candidate }` | ICE network candidate |
+| `media-state` | Client ➔ Peers | `{ cameraOn, micOn, screenSharing }`| Broadcasts media status updates |
+| `chat-message` | Client ➔ Peers | `{ text: string }` | In-room text broadcast |
+| `leave-room` | Client ➔ Server | *(none)* | Explicit room exit |
+| `peer-left` | Server ➔ Peers | `{ clientId }` | Notifies peers to clean up connections |
+| `error` | Server ➔ Client | `{ message: string }` | Operational or validation error |
 
-*For complete message schemas and payload examples, refer to [docs/contract.md](docs/contract.md).*
+> 📖 *For complete message payload schemas and lifecycle behavior, see the [WebSocket Contract Specification](docs/contract.md).*
 
 ---
 
-## 🗂️ Project Structure
+## 📂 Project Structure
 
 ```text
 meet-me/
-├── backend/                  # Signaling service
-│   ├── server.js             # HTTP/HTTPS entry point & health check
-│   ├── signaling.js          # Core WebSocket signaling logic & room state
-│   ├── signaling.test.js     # Native Node.js test suite
-│   ├── Dockerfile            # Production Node.js container build
+├── backend/                  # Node.js WebSocket signaling server
+│   ├── server.js             # HTTP/HTTPS server bootstrap & health check
+│   ├── signaling.js          # Core signaling logic, room Map, and grace periods
+│   ├── signaling.test.js     # Native Node.js test runner suite (26 tests)
+│   ├── Dockerfile            # Production Node.js alpine container build
 │   └── package.json
-├── client/                   # Frontend SPA
+├── client/                   # React 19 single-page application
 │   ├── src/
-│   │   ├── components/       # UI components (Room, Lobby, Chat, VideoTile, etc.)
-│   │   ├── hooks/            # Custom hooks (useRoom, useLocalMedia)
-│   │   ├── App.jsx           # Main application state coordinator
-│   │   └── session.js        # Session storage helpers for rejoining
-│   ├── vite.config.js        # Vite build & reverse-proxy configuration
-│   ├── vitest.config.js      # Unit test configuration
+│   │   ├── components/       # Room, Lobby, Chat, VideoTile, MediaControls
+│   │   ├── hooks/            # useRoom (WebRTC orchestration), useLocalMedia
+│   │   ├── App.jsx           # Root application coordinator
+│   │   ├── session.js        # Session persistence and reconnect utilities
+│   │   └── App.scss          # Themes, video grid layout, responsive styles
+│   ├── vite.config.js        # Reverse proxy and mkcert HTTPS detection
+│   ├── vitest.config.js      # Vitest runner configuration
 │   └── package.json
-├── e2e/                      # End-to-end integration test suite
-│   ├── tests/                # Playwright tests with fake media devices
-│   └── playwright.config.js  # Playwright runner configuration
+├── e2e/                      # Playwright end-to-end multi-browser test suite
+│   ├── tests/                # Video call, solo room, multi-participant, rejoin
+│   └── playwright.config.js
 ├── deploy/                   # Production server configuration
-│   └── meet-me.conf          # Nginx reverse proxy & WebSocket configuration
-├── docs/                     # Architectural documentation & specifications
-│   ├── contract.md           # Frozen WebSocket signaling schema
+│   └── meet-me.conf          # Nginx reverse proxy configuration with WSS upgrade
+├── docs/                     # Architectural specifications and contracts
+│   ├── contract.md           # Frozen signaling protocol schema
 │   └── video-room-app-requirements.md
-├── .github/workflows/        # Automated CI/CD pipeline
-│   └── ci.yml                # Lint, unit tests, E2E tests & EC2 deployment
-├── docker-compose.yml        # Docker service orchestration
+├── .github/workflows/
+│   └── ci.yml                # Automated CI pipeline & EC2 CD deployment
+├── docker-compose.yml        # Docker service definition
 └── .env.example              # Environment variables template
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠️ Tech Stack & Tools
 
-### Frontend
-- **Framework:** [React 19](https://react.dev/)
-- **Bundler / Dev Server:** [Vite 8](https://vitejs.dev/)
-- **Styles:** Modular [Sass (SCSS)](https://sass-lang.com/) with CSS variables
-- **Testing:** [Vitest](https://vitest.dev/) + [@testing-library/react](https://testing-library.com/)
-
-### Backend
-- **Runtime:** [Node.js](https://nodejs.org/) (>= 22.0.0, tested on Node 24)
-- **WebSockets:** [`ws`](https://github.com/websockets/ws)
-- **Testing:** Native `node:test` runner
-
-### E2E & Automation
-- **E2E Testing:** [Playwright](https://playwright.dev/) with automated Chromium fake media devices (`--use-fake-device-for-media-stream`)
-- **CI / CD:** GitHub Actions
-
-### Infrastructure & Deployment
-- **Containerization:** Docker & Docker Compose
-- **Web Server & Reverse Proxy:** Nginx with SSL (Let's Encrypt)
-- **Cloud Provider:** AWS EC2
+- **Frontend:** [React 19](https://react.dev/), [Vite 8](https://vitejs.dev/), [Sass (SCSS)](https://sass-lang.com/), [Vitest](https://vitest.dev/), [@testing-library/react](https://testing-library.com/)
+- **Backend:** [Node.js 22+](https://nodejs.org/), [`ws`](https://github.com/websockets/ws), Native `node:test` runner
+- **WebRTC & Media:** WebRTC standard API, Google STUN (`stun.l.google.com:19302`), Metered TURN relay
+- **E2E Testing:** [Playwright](https://playwright.dev/) with automated fake media stream devices
+- **DevOps & Cloud:** Docker, Docker Compose, Nginx Reverse Proxy, AWS EC2, GitHub Actions CI/CD
 
 ---
 
-## ⚙️ Environment Configuration
+## ⚙️ Configuration
 
-Copy `.env.example` to `.env` in the root directory:
+Environment variables can be customized in a `.env` file at the root:
 
-```bash
-cp .env.example .env
+```ini
+# Backend configuration
+PORT=8080
+BACKEND_PORT=8090
+SECRET_KEY=meet-me-secret-key-change-in-production
+ROOM_GRACE_MS=10000
+
+# Client configuration (Vite)
+VITE_WS_URL=/ws
+VITE_API_URL=http://localhost:8080
+VITE_SECRET_KEY=meet-me-secret-key-change-in-production
 ```
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `8080` | Internal port that the backend process listens on |
-| `BACKEND_PORT` | `8090` | Host port mapped by Docker Compose (`127.0.0.1:8090:8080`) |
-| `SECRET_KEY` | `meet-me-secret-key-change-in-production` | Secret key required for WebSocket authorization |
-| `ROOM_GRACE_MS` | `10000` | Room retention grace period in milliseconds when all peers leave |
-| `VITE_WS_URL` | `/ws` | WebSocket URL for client (proxied by Vite in dev / Nginx in prod) |
-| `VITE_API_URL` | `http://localhost:8080` | Backend HTTP API base URL |
-| `VITE_SECRET_KEY` | `meet-me-secret-key-change-in-production` | Secret key passed by client in connection query string |
 
 ---
 
-## 🚀 Getting Started
+## 💻 Local Development & HTTPS
 
-### Prerequisites
+### Running with Local SSL (Optional, for Mobile / LAN testing)
 
-- **Node.js** >= 22.0.0 (Node 24 recommended)
-- **npm** >= 10.0.0
-- **Docker & Docker Compose** *(optional, for containerized run)*
+Browsers require a **Secure Context** (`localhost` or `https://`) to access `navigator.mediaDevices.getUserMedia()`. If testing from a smartphone or external computer on your local WiFi:
 
-### 1. Installation
-
-Clone the repository and install dependencies for all workspaces:
-
-```bash
-git clone https://github.com/BekmurodGofurov/meet-me.git
-cd meet-me
-
-# Install backend dependencies
-cd backend && npm install && cd ..
-
-# Install frontend dependencies
-cd client && npm install && cd ..
-
-# Install e2e dependencies
-cd e2e && npm install && cd ..
-```
-
-### 2. Running in Development Mode
-
-You can run backend and frontend concurrently in two terminal tabs:
-
-**Terminal 1 — Backend:**
-```bash
-cd backend
-node server.js
-# Or with npm test to verify
-```
-*Backend runs on `ws://localhost:8080`.*
-
-**Terminal 2 — Frontend:**
-```bash
-cd client
-npm run dev
-```
-*Frontend runs on `http://localhost:5173` with automated proxying of `/ws` to port 8080.*
-
-Open `http://localhost:5173` in two separate browser windows (or Incognito mode) to test room creation, media streaming, screen sharing, and real-time chat!
-
-> **Note on Mobile & LAN Devices:** Modern browsers restrict `navigator.mediaDevices.getUserMedia` to **Secure Contexts** (`localhost` or `https://`). For local network testing across smartphones or other PCs, generate local SSL certificates using [`mkcert`](https://github.com/FiloSottile/mkcert) inside `client/certs/`. The dev server and backend automatically detect and enable HTTPS/WSS when certificates are present.
+1. Install [`mkcert`](https://github.com/FiloSottile/mkcert):
+   ```bash
+   brew install mkcert
+   mkcert -install
+   ```
+2. Generate certificates for your local IP inside `client/certs/`:
+   ```bash
+   mkdir -p client/certs
+   cd client/certs
+   mkcert localhost 127.0.0.1 <YOUR_LAN_IP>
+   cd ../..
+   ```
+3. Start the dev servers normally. Vite and the backend server automatically detect the certificates and serve over `https://` and `wss://`.
 
 ---
 
 ## 🐳 Docker Deployment
 
-Run the signaling service using Docker Compose:
+To build and run the signaling server inside an isolated container:
 
 ```bash
+# Start container in detached mode
 docker compose up -d --build
-```
 
-Check container status and logs:
-
-```bash
-docker compose ps
+# View container logs
 docker compose logs -f backend
+
+# Stop container
+docker compose down
 ```
 
 ---
 
 ## 🧪 Testing Suite
 
-Meet-Me maintains comprehensive test coverage across unit, integration, and end-to-end layers.
+Meet-Me includes rigorous automated tests covering backend signaling, frontend components, and multi-browser WebRTC interactions:
 
 ```bash
-# 1. Run backend unit & integration tests (Node.js test runner)
+# Backend unit & integration tests (26 passing tests)
 npm --prefix backend test
 
-# 2. Run frontend unit & component tests (Vitest)
+# Frontend unit & component tests (89 passing tests)
 npm --prefix client test
 
-# 3. Run frontend ESLint code quality checks
+# Frontend ESLint code quality checks
 npm --prefix client run lint
 
-# 4. Run end-to-end multi-user video call tests (Playwright)
+# Playwright End-to-End integration tests
 npm --prefix e2e test
 ```
 
 ### End-to-End Test Highlights
-The Playwright suite verifies real browser WebRTC interactions by launching headless Chromium instances with fake media devices:
-- `solo-room.spec.js`: Room creation, code input formatting, and local preview playback.
-- `two-participants.spec.js`: Multi-tab join handshake, peer tile rendering, and real-time text chat exchange.
-- `video-call.spec.js`: WebRTC media track transmission, audio/video toggle states, and screen sharing.
-- `rejoin.spec.js`: Automatic session recovery and grace period retention on tab reload.
+The Playwright suite verifies real browser interactions using Chromium with fake media flags:
+- `solo-room.spec.js`: Room creation, room code formatting, and local video playback.
+- `two-participants.spec.js`: Multi-tab negotiation, reciprocal video streams, and real-time chat.
+- `video-call.spec.js`: Camera/microphone mute toggle reflection and screen share tracks.
+- `rejoin.spec.js`: Session persistence across tab reloads without breaking room membership.
 
 ---
 
-## 🚢 CI/CD & Production Architecture
+## 🚀 Production Deployment & CI/CD
 
-The project features a fully automated continuous integration and continuous deployment pipeline powered by **GitHub Actions** (`.github/workflows/ci.yml`):
+Every push to the `main` branch triggers an automated GitHub Actions pipeline (`.github/workflows/ci.yml`):
 
 ```mermaid
 flowchart LR
-    A["Push to main"] --> B["Backend Tests"]
-    A --> C["Frontend Lint & Build"]
+    A["Push to main"] --> B["Backend Tests & Smoke Test"]
+    A --> C["Frontend Lint, Tests & Build"]
     A --> D["Playwright E2E Tests"]
-    B --> E{"All Tests Pass?"}
+    B --> E{"All Checks Pass?"}
     C --> E
     D --> E
-    E -- Yes --> F["SSH Deploy to AWS EC2"]
-    F --> G["Build & Sync Static Assets"]
-    F --> H["Docker Compose Backend Restart"]
+    E -- Yes --> F["SSH to AWS EC2"]
+    F --> G["Deploy Client Assets to /var/www"]
+    F --> H["Docker Compose Restart"]
     F --> I["Nginx Reload"]
 ```
 
-### Production Nginx Setup (`deploy/meet-me.conf`)
-
-- Serves pre-built Vite static assets directly from `/var/www/meet-me-frontend` with client-side routing fallback.
-- Proxies `/ws` signaling traffic to the containerized Node.js service running on `127.0.0.1:8090` with WebSocket upgrade headers and persistent timeouts (`3600s`).
-- Free SSL termination managed seamlessly via Certbot / Let's Encrypt.
+### Nginx Reverse Proxy (`deploy/meet-me.conf`)
+The production instance runs behind Nginx:
+- Static client assets are served directly from `/var/www/meet-me-frontend` with HTML5 pushState fallback.
+- The `/ws` path proxies WebSocket signaling to `127.0.0.1:8090` with persistent `3600s` connection timeouts and upgrade headers.
+- SSL certificates are provisioned and renewed automatically via Let's Encrypt / Certbot.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/BekmurodGofurov/meet-me/issues).
+Contributions, feature requests, and bug reports are welcome!
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
@@ -337,4 +371,4 @@ This project is licensed under the [ISC License](LICENSE).
 
 **Bekmurod Gofurov**
 - GitHub: [@BekmurodGofurov](https://github.com/BekmurodGofurov)
-- Website: [meet-me.bekmurod.uz](https://meet-me.bekmurod.uz)
+- Live Platform: [meet-me.bekmurod.uz](https://meet-me.bekmurod.uz)
