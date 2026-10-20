@@ -23,7 +23,7 @@
 
 <p align="center">
   <a href="https://meet-me.bekmurod.uz" target="_blank" rel="noopener noreferrer">
-    <img src="assets/badge-live-demo.svg" alt="Live Demo" />
+    <img src="assets/live-demo.svg" alt="Live Demo" />
   </a>
   <a href="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml">
     <img src="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml/badge.svg" alt="CI/CD Status" />
