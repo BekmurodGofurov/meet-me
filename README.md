@@ -14,8 +14,7 @@
 
 <h4 align="center">
   <a href="INSTALLATION.md">Installation</a> |
-  <a href="docs/contract.md">Documentation</a> |
-  <a href="https://meet-me.bekmurod.uz">Live Demo</a>
+  <a href="docs/contract.md">Documentation</a>
 </h4>
 
 <p align="center">
@@ -23,40 +22,23 @@
 </p>
 
 <p align="center">
+  <a href="https://meet-me.bekmurod.uz" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/Live%20Demo-online-2ea44f?style=flat&logo=googlechrome&logoColor=white" alt="Live Demo" />
+  </a>
   <a href="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml">
     <img src="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml/badge.svg" alt="CI/CD Status" />
   </a>
-  <a href="https://meet-me.bekmurod.uz">
-    <img src="https://img.shields.io/badge/Live%20Demo-meet--me.bekmurod.uz-2563eb?style=flat&logo=googlechrome&logoColor=white" alt="Live Demo" />
-  </a>
-  <a href="LICENSE">
+  <a href="?tab=License-1-ov-file#readme">
     <img src="https://img.shields.io/badge/license-ISC-blue.svg" alt="Meet-Me is released under the ISC license." />
   </a>
-  <a href="CONTRIBUTING.md">
+  <a href="?tab=Contributing-1-ov-file#readme">
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat" alt="PRs welcome!" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://webrtc.org/">
-    <img src="https://img.shields.io/badge/WebRTC-P2P%20Mesh-orange?style=flat&logo=webrtc&logoColor=white" alt="WebRTC Mesh" />
-  </a>
-  <a href="https://nodejs.org/">
-    <img src="https://img.shields.io/badge/Node.js-%3E%3D22.0.0-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node Version" />
-  </a>
-  <a href="https://react.dev/">
-    <img src="https://img.shields.io/badge/React-19.2-61DAFB?style=flat&logo=react&logoColor=black" alt="React 19" />
-  </a>
-  <a href="https://playwright.dev/">
-    <img src="https://img.shields.io/badge/E2E-Playwright-45ba4b?style=flat&logo=playwright&logoColor=white" alt="Playwright E2E" />
   </a>
 </p>
 
 ---
 
 ## Getting Started
-
-The fastest way to experience Meet-Me is with the [Live Demo](https://meet-me.bekmurod.uz). Create a room, share the 6-character code, and start video conferencing immediately in your browser.
 
 To set up and run Meet-Me locally on your machine, visit the [Installation Guide](INSTALLATION.md).
 
@@ -79,10 +61,10 @@ Learn more about the signaling message protocol in the [Documentation](docs/cont
 
 ## Community & Contributions
 
-We welcome contributions to Meet-Me. Please review our [Contribution Guide](CONTRIBUTING.md) to learn how to propose features, report issues, and submit pull requests.
+We welcome contributions to Meet-Me. Please review our [Contribution Guide](?tab=Contributing-1-ov-file#readme) to learn how to propose features, report issues, and submit pull requests.
 
-For security concerns and vulnerability reporting, please read our [Security Policy](SECURITY.md).
+For security concerns and vulnerability reporting, please read our [Security Policy](?tab=Security-1-ov-file#readme).
 
 ## License
 
-Licensed under the [ISC License](LICENSE).
+Licensed under the [ISC License](?tab=License-1-ov-file#readme).
