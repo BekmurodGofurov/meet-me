@@ -22,18 +22,10 @@
 </p>
 
 <p align="center">
-  <a href="https://meet-me.bekmurod.uz" target="_blank" rel="noopener noreferrer">
-    <img src="assets/live-demo.svg" alt="Live Demo" />
-  </a>
-  <a href="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml">
-    <img src="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml/badge.svg" alt="CI/CD Status" />
-  </a>
-  <a href="?tab=License-1-ov-file#readme">
-    <img src="https://img.shields.io/badge/license-ISC-blue.svg" alt="Meet-Me is released under the ISC license." />
-  </a>
-  <a href="?tab=Contributing-1-ov-file#readme">
-    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat" alt="PRs welcome!" />
-  </a>
+  <a href="https://meet-me.bekmurod.uz" target="_blank" rel="noopener noreferrer"><img src="assets/live-demo.svg" alt="Live Demo" /></a>
+  <a href="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml"><img src="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml/badge.svg" alt="CI/CD Status" /></a>
+  <a href="?tab=License-1-ov-file#readme"><img src="https://img.shields.io/badge/license-ISC-blue.svg" alt="Meet-Me is released under the ISC license." /></a>
+  <a href="?tab=Contributing-1-ov-file#readme"><img src="https://img.shields.io/badge/PRs-welcome-orange.svg?style=flat" alt="PRs welcome!" /></a>
 </p>
 
 ---
