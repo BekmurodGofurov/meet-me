@@ -154,16 +154,14 @@ export default function useRoom(tracksRef) {
 
       pc.ontrack = (event) => {
         const { track } = event
-        const transceivers = pc.getTransceivers ? pc.getTransceivers() : []
-        const videoTransceivers = transceivers.filter(
-          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video',
-        )
-        const isScreen =
-          event.transceiver && videoTransceivers.length > 1
-            ? event.transceiver === videoTransceivers[1]
-            : track.kind === 'video' &&
-              (remoteStreamsRef.current.get(peerId)?.getVideoTracks()?.length > 0 ||
-                peer.senders.screen?.track === track)
+        // Use a stable label attached to the transceiver at connection time to
+        // tell camera from screen. Falling back to index-based detection is
+        // fragile when one side has no camera track and the orders diverge.
+        const transceiver = event.transceiver
+        const isScreen = transceiver
+          ? transceiver._isScreen === true
+          : track.kind === 'video' &&
+            remoteStreamsRef.current.get(peerId)?.getVideoTracks()?.length > 0
 
         if (isScreen) {
           let screenStream = remoteScreenStreamsRef.current.get(peerId)
@@ -195,14 +193,30 @@ export default function useRoom(tracksRef) {
       // Send what exists now; ask to receive the kinds we can't send yet, so
       // there is always something to negotiate and the m-lines exist for a
       // track switched on later. Order is deterministic: [camera, audio, screen].
-      if (video) peer.senders.video = pc.addTrack(video)
-      else pc.addTransceiver('video', { direction: 'recvonly' })
+      // Each transceiver is tagged with _isScreen so ontrack can reliably
+      // distinguish camera from screen regardless of which tracks are active.
+      if (video) {
+        const sender = pc.addTrack(video)
+        peer.senders.video = sender
+        const t = pc.getTransceivers().find((tr) => tr.sender === sender)
+        if (t) t._isScreen = false
+      } else {
+        const t = pc.addTransceiver('video', { direction: 'recvonly' })
+        t._isScreen = false
+      }
 
       if (audio) peer.senders.audio = pc.addTrack(audio)
       else pc.addTransceiver('audio', { direction: 'recvonly' })
 
-      if (screen) peer.senders.screen = pc.addTrack(screen)
-      else pc.addTransceiver('video', { direction: 'recvonly' })
+      if (screen) {
+        const sender = pc.addTrack(screen)
+        peer.senders.screen = sender
+        const t = pc.getTransceivers().find((tr) => tr.sender === sender)
+        if (t) t._isScreen = true
+      } else {
+        const t = pc.addTransceiver('video', { direction: 'recvonly' })
+        t._isScreen = true
+      }
 
       peersRef.current.set(peerId, peer)
       return peer
@@ -458,7 +472,16 @@ export default function useRoom(tracksRef) {
         const { pc, senders } = peer
 
         if (!track) {
-          senders[kind]?.replaceTrack(null)
+          if (senders[kind]) {
+            senders[kind].replaceTrack(null)
+            // Reset the transceiver direction to recvonly so the remote side
+            // knows we stopped sending. This also triggers onnegotiationneeded
+            // so the change is actually renegotiated rather than silently lost.
+            const transceiver = pc.getTransceivers().find((t) => t.sender === senders[kind])
+            if (transceiver && transceiver.direction !== 'recvonly') {
+              transceiver.direction = 'recvonly'
+            }
+          }
           return
         }
 
@@ -470,16 +493,23 @@ export default function useRoom(tracksRef) {
         // Reuse the receive-only m-line created for this kind if there is one,
         // rather than growing the session description on every toggle. Either
         // path triggers onnegotiationneeded, which republishes the session.
+        // Use the _isScreen tag set at transceiver creation time rather than
+        // positional indexing, which breaks when one side has no camera.
         const transceivers = pc.getTransceivers ? pc.getTransceivers() : []
-        const videoTransceivers = transceivers.filter(
-          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video',
-        )
 
         let reusable = null
         if (kind === 'video') {
-          reusable = videoTransceivers[0]
+          reusable = transceivers.find(
+            (t) =>
+              t._isScreen === false &&
+              (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
+          )
         } else if (kind === 'screen') {
-          reusable = videoTransceivers[1]
+          reusable = transceivers.find(
+            (t) =>
+              t._isScreen === true &&
+              (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
+          )
         } else if (kind === 'audio') {
           reusable = transceivers.find(
             (t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio',
@@ -491,7 +521,13 @@ export default function useRoom(tracksRef) {
           reusable.sender.replaceTrack(track)
           senders[kind] = reusable.sender
         } else {
-          senders[kind] = pc.addTrack(track)
+          const sender = pc.addTrack(track)
+          senders[kind] = sender
+          // Tag newly added transceivers too
+          if (kind === 'video' || kind === 'screen') {
+            const newT = pc.getTransceivers().find((t) => t.sender === sender)
+            if (newT) newT._isScreen = kind === 'screen'
+          }
         }
       })
 
