@@ -132,6 +132,45 @@ describe('useLocalMedia', () => {
     expect(result.current.mediaError).toMatch(/microphone/i)
   })
 
+  it('falls back to ideal constraints if initial video constraint rejects with OverconstrainedError', async () => {
+    const constraintErr = new Error('Invalid constraint')
+    constraintErr.name = 'OverconstrainedError'
+    getUserMedia.mockRejectedValueOnce(constraintErr)
+
+    const { result } = setup()
+
+    await act(async () => {
+      await result.current.toggleCamera()
+    })
+
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(getUserMedia).toHaveBeenNthCalledWith(1, { video: true })
+    expect(getUserMedia).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        video: expect.objectContaining({ facingMode: 'user' }),
+      }),
+    )
+    expect(result.current.cameraOn).toBe(true)
+    expect(result.current.mediaError).toBe('')
+  })
+
+  it('sets a user-friendly error message when an OverconstrainedError cannot be recovered', async () => {
+    const constraintErr = new Error('Invalid constraint')
+    constraintErr.name = 'OverconstrainedError'
+    getUserMedia.mockRejectedValue(constraintErr)
+
+    const { result } = setup()
+
+    await act(async () => {
+      await result.current.toggleCamera()
+    })
+
+    expect(result.current.cameraOn).toBe(false)
+    expect(result.current.mediaError).not.toBe('Could not access the camera. Invalid constraint')
+    expect(result.current.mediaError).toMatch(/No compatible camera was found|No camera was detected/i)
+  })
+
   it('starts with screen sharing off and no screen stream', () => {
     const { result } = setup()
 
