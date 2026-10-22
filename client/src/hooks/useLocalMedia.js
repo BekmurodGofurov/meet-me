@@ -3,6 +3,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // Camera and microphone are requested separately and only on demand, so the
 // browser asks for one permission at the moment it is actually needed instead
 // of demanding both on page load.
+
+// Check the current permission state without triggering a prompt.
+// Returns 'granted', 'denied', 'prompt', or null if the API is not available.
+async function queryPermission(kind) {
+  try {
+    const name = kind === 'video' ? 'camera' : 'microphone'
+    const result = await navigator.permissions?.query({ name })
+    return result?.state ?? null
+  } catch {
+    return null
+  }
+}
+
 async function acquireMediaStream(kind) {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('MediaDevices API is not available. Please ensure you are using a secure connection (HTTPS).')
@@ -131,18 +144,29 @@ export default function useLocalMedia(onTrackChangedRef) {
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           message =
             kind === 'video'
-              ? 'Could not access the camera. Permission was denied in browser or system settings.'
-              : 'Could not access the microphone. Permission was denied in browser or system settings.'
+              ? 'Camera permission was denied. Click the camera icon in the browser address bar to allow access, or check System Settings → Privacy & Security → Camera.'
+              : 'Microphone permission was denied. Click the camera icon in the browser address bar to allow access, or check System Settings → Privacy & Security → Microphone.'
         } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
           message =
             kind === 'video'
               ? 'Could not access the camera. It may be in use by another application (FaceTime, Zoom, etc.).'
               : 'Could not access the microphone. It may be in use by another application.'
         } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-          message =
-            kind === 'video'
-              ? 'Could not find a camera. Please check your camera connection.'
-              : 'Could not find a microphone. Please check your microphone connection.'
+          // NotFoundError can mean: (1) no physical camera, OR (2) permission
+          // was blocked at the OS/browser level before the prompt could appear.
+          // Check the Permissions API to distinguish these two cases.
+          const permState = await queryPermission(kind)
+          if (permState === 'denied') {
+            message =
+              kind === 'video'
+                ? 'Camera permission is blocked. Click the lock/camera icon in the browser address bar and allow access, then refresh the page. Also check System Settings → Privacy & Security → Camera.'
+                : 'Microphone permission is blocked. Click the lock/mic icon in the browser address bar and allow access, then refresh the page. Also check System Settings → Privacy & Security → Microphone.'
+          } else {
+            message =
+              kind === 'video'
+                ? 'Could not find a camera. Make sure your camera is connected, then try again.'
+                : 'Could not find a microphone. Make sure your microphone is connected, then try again.'
+          }
         } else if (isConstraintError) {
           let hasDevice = true
           try {

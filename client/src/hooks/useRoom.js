@@ -80,6 +80,7 @@ export default function useRoom(tracksRef) {
   // the socket opens rather than racing a state update.
   const [initialSession] = useState(loadSession)
   const storedSessionRef = useRef(initialSession)
+  const isRejoiningRef = useRef(Boolean(initialSession))
 
   const [connectionStatus, setConnectionStatus] = useState('connecting')
   const [currentRoom, setCurrentRoom] = useState(null)
@@ -271,6 +272,7 @@ export default function useRoom(tracksRef) {
       const stored = storedSessionRef.current || loadSession()
       if (stored) {
         storedSessionRef.current = stored
+        isRejoiningRef.current = true
         post({ type: 'join-room', roomId: stored.roomId, name: stored.name })
       }
     }
@@ -288,6 +290,7 @@ export default function useRoom(tracksRef) {
             setCurrentRoom(data.roomId)
             setParticipants([])
             setRejoining(false)
+            isRejoiningRef.current = false
             setRememberedName(data.name)
             setMessages([])
             saveSession(data.roomId, data.name)
@@ -300,6 +303,7 @@ export default function useRoom(tracksRef) {
             setParticipants(data.peers)
             setCurrentRoom(data.roomId)
             setRejoining(false)
+            isRejoiningRef.current = false
             setRememberedName(data.name)
             setMessages([])
             saveSession(data.roomId, data.name)
@@ -389,14 +393,25 @@ export default function useRoom(tracksRef) {
             ])
             break
 
-          case 'error':
-            if (storedSessionRef.current) {
+          case 'error': {
+            const wasRejoining = isRejoiningRef.current
+            if (storedSessionRef.current || wasRejoining) {
               clearSession()
               storedSessionRef.current = null
               setRejoining(false)
+              isRejoiningRef.current = false
             }
-            setRoomError(data.message)
+
+            if (wasRejoining) {
+              // A stale room was deleted while away; silently return to the clean home page.
+              setRoomError('')
+            } else {
+              const message =
+                data.message === 'Room does not exist' ? 'This room does not exist' : data.message
+              setRoomError(message)
+            }
             break
+          }
 
           default:
             break
@@ -487,7 +502,9 @@ export default function useRoom(tracksRef) {
 
   const createRoom = useCallback(
     (name) => {
+      isRejoiningRef.current = false
       setRoomError('')
+      setRememberedName(name)
       saveName(name)
       send({ type: 'create-room', name })
     },
@@ -496,10 +513,10 @@ export default function useRoom(tracksRef) {
 
   const joinRoom = useCallback(
     (roomId, name) => {
+      isRejoiningRef.current = false
       setRoomError('')
+      setRememberedName(name)
       saveName(name)
-      saveSession(roomId, name)
-      storedSessionRef.current = { roomId, name }
       send({ type: 'join-room', roomId, name })
     },
     [send],
@@ -508,6 +525,7 @@ export default function useRoom(tracksRef) {
   const leaveRoom = useCallback(() => {
     clearSession()
     storedSessionRef.current = null
+    isRejoiningRef.current = false
 
     peersRef.current.forEach((peer) => peer.pc.close())
     peersRef.current.clear()
@@ -552,7 +570,9 @@ export default function useRoom(tracksRef) {
   const cancelRejoin = useCallback(() => {
     clearSession()
     storedSessionRef.current = null
+    isRejoiningRef.current = false
     setRejoining(false)
+    setRoomError('')
   }, [])
 
   return {
