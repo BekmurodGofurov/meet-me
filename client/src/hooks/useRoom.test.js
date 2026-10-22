@@ -376,7 +376,7 @@ describe('auto-rejoin from a stored session', () => {
     expect(result.current.currentRoom).toBe('stored-room')
   })
 
-  it('a failed rejoin clears the stored session and falls back to the lobby', async () => {
+  it('a failed rejoin clears the stored session and falls back to the lobby without an error', async () => {
     saveSession('stale-room', 'Bekmurod')
     const { result } = setup()
     const socket = latestSocket()
@@ -387,10 +387,25 @@ describe('auto-rejoin from a stored session', () => {
     })
 
     expect(result.current.rejoining).toBe(false)
-    expect(result.current.roomError).toBe('Room does not exist')
+    expect(result.current.roomError).toBe('')
     expect(loadSession()).toBeNull()
     // The name itself should survive so the lobby doesn't ask again.
     expect(result.current.rememberedName).toBe('Bekmurod')
+  })
+
+  it('a manual join of a non-existent room shows the error', async () => {
+    const { result } = setup()
+    const socket = latestSocket()
+
+    await act(async () => socket.open())
+    act(() => result.current.joinRoom('fake01', 'Bekmurod'))
+
+    await act(async () => {
+      socket.receive({ type: 'error', message: 'Room does not exist' })
+    })
+
+    expect(result.current.rejoining).toBe(false)
+    expect(result.current.roomError).toBe('This room does not exist')
   })
 })
 
