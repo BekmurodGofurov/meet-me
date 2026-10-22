@@ -3,6 +3,75 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // Camera and microphone are requested separately and only on demand, so the
 // browser asks for one permission at the moment it is actually needed instead
 // of demanding both on page load.
+async function acquireMediaStream(kind) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('MediaDevices API is not available. Please ensure you are using a secure connection (HTTPS).')
+  }
+
+  if (kind === 'audio') {
+    return await navigator.mediaDevices.getUserMedia({ audio: true })
+  }
+
+  // Attempt standard constraints first
+  try {
+    return await navigator.mediaDevices.getUserMedia({ video: true })
+  } catch (err) {
+    const isConstraintError =
+      err?.name === 'OverconstrainedError' ||
+      String(err?.message || '').toLowerCase().includes('constraint')
+
+    if (!isConstraintError) {
+      throw err
+    }
+
+    // Fallbacks for browsers/devices where { video: true } rejects with OverconstrainedError
+    // Fallback 1: Ideal dimensions with user facingMode
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      })
+    } catch {
+      // Proceed to next fallback
+    }
+
+    // Fallback 2: Ideal facingMode only
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'user' } },
+      })
+    } catch {
+      // Proceed to next fallback
+    }
+
+    // Fallback 3: Query available device IDs and target the first camera
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices?.()
+      const videoDevices = devices?.filter((d) => d.kind === 'videoinput')
+      if (videoDevices && videoDevices.length > 0) {
+        for (const device of videoDevices) {
+          if (device.deviceId) {
+            try {
+              return await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { ideal: device.deviceId } },
+              })
+            } catch {
+              // Try next device
+            }
+          }
+        }
+      }
+    } catch {
+      // Fallback enumeration failed
+    }
+
+    throw err
+  }
+}
+
 export default function useLocalMedia(onTrackChangedRef) {
   const tracksRef = useRef({ video: null, audio: null, screen: null })
 
@@ -43,13 +112,7 @@ export default function useLocalMedia(onTrackChangedRef) {
       setMediaError('')
 
       try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error('MediaDevices API is not available. Please ensure you are using a secure connection (HTTPS).')
-        }
-
-        const media = await navigator.mediaDevices.getUserMedia(
-          kind === 'video' ? { video: true } : { audio: true },
-        )
+        const media = await acquireMediaStream(kind)
         const track = media.getTracks()[0]
 
         tracksRef.current[kind] = track
@@ -61,6 +124,10 @@ export default function useLocalMedia(onTrackChangedRef) {
       } catch (err) {
         console.error(`Failed to start ${kind}:`, err.name, err.message, err)
         let message
+        const isConstraintError =
+          err.name === 'OverconstrainedError' ||
+          String(err.message || '').toLowerCase().includes('constraint')
+
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           message =
             kind === 'video'
@@ -76,6 +143,31 @@ export default function useLocalMedia(onTrackChangedRef) {
             kind === 'video'
               ? 'Could not find a camera. Please check your camera connection.'
               : 'Could not find a microphone. Please check your microphone connection.'
+        } else if (isConstraintError) {
+          let hasDevice = true
+          try {
+            const devices = await navigator.mediaDevices?.enumerateDevices?.()
+            if (devices && devices.length > 0) {
+              const matching = devices.filter((d) => d.kind === (kind === 'video' ? 'videoinput' : 'audioinput'))
+              if (matching.length === 0) {
+                hasDevice = false
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          if (!hasDevice) {
+            message =
+              kind === 'video'
+                ? 'Could not find a camera. No camera was detected or permission is blocked in system settings.'
+                : 'Could not find a microphone. No microphone was detected or permission is blocked in system settings.'
+          } else {
+            message =
+              kind === 'video'
+                ? 'Could not access the camera. No compatible camera was found, or camera permissions are restricted by your browser/system settings.'
+                : 'Could not access the microphone. No compatible microphone was found, or microphone permissions are restricted by your browser/system settings.'
+          }
         } else {
           message =
             kind === 'video'
