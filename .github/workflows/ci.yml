@@ -114,13 +114,9 @@ jobs:
         working-directory: e2e
         run: npm ci
 
-      # --with-deps also installs the OS-level media/codec libraries that
-      # --use-fake-device-for-media-stream needs to work headlessly.
       - name: Install Playwright browsers
         working-directory: e2e
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # No mkcert certs exist in CI - E2E=1 (set in playwright.config.js's
       # webServer env) makes both servers fall back to plain http/ws on
