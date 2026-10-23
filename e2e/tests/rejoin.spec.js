@@ -49,10 +49,10 @@ test('a rejoin against a room that is genuinely gone falls back to the lobby wit
   // wouldn't do that - the whole point of the grace period is that a normal
   // reload's new connection arrives well within it (see the first test).
   await page.close()
-  await new Promise((resolve) => setTimeout(resolve, ROOM_GRACE_MS + 1000))
+  await new Promise((resolve) => setTimeout(resolve, ROOM_GRACE_MS + 2000))
 
   const laterPage = await browser.newPage()
-  await laterPage.goto('/')
+  await laterPage.goto('/lobby')
   await laterPage.evaluate((value) => localStorage.setItem('meet-me:session', value), session)
   await laterPage.reload()
 

@@ -263,6 +263,7 @@ describe('media-state', () => {
       cameraOn: false,
       micOn: false,
       screenSharing: true,
+      screenTrackId: fakeScreenTrack.id,
     })
 
     act(() => {
@@ -274,7 +275,51 @@ describe('media-state', () => {
       cameraOn: false,
       micOn: false,
       screenSharing: false,
+      screenTrackId: null,
     })
+  })
+
+  it('moves camera track to screen stream if media-state arrives after ontrack with screenTrackId', async () => {
+    const { result, socket } = await connectAndOpen()
+
+    await act(async () => {
+      socket.receive({
+        type: 'existing-peers',
+        roomId: 'abc123',
+        clientId: 'me',
+        name: 'Me',
+        peers: [{ clientId: 'peer-1', name: 'Other' }],
+      })
+    })
+
+    const peer = FakeRTCPeerConnection.instances[0]
+    const fakeTrack = new FakeMediaStreamTrack('video')
+
+    // Simulate ontrack before media-state arrives
+    act(() => {
+      peer.ontrack({ track: fakeTrack, transceiver: {} })
+    })
+
+    // Initially in remoteStreams
+    expect(result.current.remoteStreams['peer-1']?.getVideoTracks()).toHaveLength(1)
+    expect(result.current.remoteScreenStreams['peer-1']).toBeUndefined()
+
+    // Now media-state arrives announcing screen sharing with this track ID
+    await act(async () => {
+      socket.receive({
+        type: 'media-state',
+        from: 'peer-1',
+        cameraOn: false,
+        micOn: true,
+        screenSharing: true,
+        screenTrackId: fakeTrack.id,
+      })
+    })
+
+    // Moved to remoteScreenStreams!
+    expect(result.current.remoteScreenStreams['peer-1']?.getVideoTracks()).toHaveLength(1)
+    expect(result.current.remoteScreenStreams['peer-1'].getVideoTracks()[0].id).toBe(fakeTrack.id)
+    expect(result.current.remoteStreams['peer-1']?.getVideoTracks()).toHaveLength(0)
   })
 })
 

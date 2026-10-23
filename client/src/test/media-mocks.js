@@ -22,6 +22,10 @@ export class FakeMediaStream {
     this._tracks.push(track)
   }
 
+  removeTrack(track) {
+    this._tracks = this._tracks.filter((t) => t.id !== track.id)
+  }
+
   getTracks() {
     return this._tracks
   }

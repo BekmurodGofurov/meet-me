@@ -16,6 +16,7 @@ test('two people can join the same room, chat, and see join/leave notices', asyn
   await memberPage.open()
   await memberPage.enterName('Aziz')
   await memberPage.joinRoom(code)
+  await ownerPage.admitGuest('Aziz')
 
   // Both land in the same room.
   await expect(ownerPage.roomCodeText()).toHaveText(`Room ${code}`)
@@ -67,6 +68,7 @@ test('a participant with camera and mic both off still shows as a placeholder ti
   await member.open()
   await member.enterName('Aziz')
   await member.joinRoom(code)
+  await owner.admitGuest('Aziz')
 
   // Neither has turned on camera or mic at any point.
   const ownerViewOfMember = owner.tileByLabel('Aziz')
@@ -94,6 +96,7 @@ test('a full room (6 people) rejects a 7th', async ({ browser }) => {
     await pages[i].open()
     await pages[i].enterName(`Person ${i + 1}`)
     await pages[i].joinRoom(code)
+    await pages[0].admitGuest(`Person ${i + 1}`)
     await expect(pages[i].roomCodeText()).toHaveText(`Room ${code}`)
   }
 

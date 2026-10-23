@@ -244,6 +244,114 @@ every other member's connection.
 
 ---
 
+## 11. `create-invite` & `invite-created`
+
+**Direction:** Browser → Server, then Server → Browser
+
+**When:** Room member requests a shareable invite link (UUID v4 token).
+
+**Browser payload:**
+```json
+{ "type": "create-invite", "roomId": "X7K2P9" }
+```
+
+**Server response:**
+```json
+{ "type": "invite-created", "token": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d", "roomId": "X7K2P9" }
+```
+
+---
+
+## 12. `resolve-invite` & `invite-resolved`
+
+**Direction:** Browser → Server, then Server → Browser
+
+**When:** Guest opens an invite link `/join/:token` and looks up the room code.
+
+**Browser payload:**
+```json
+{ "type": "resolve-invite", "token": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" }
+```
+
+**Server response:**
+```json
+{ "type": "invite-resolved", "roomId": "X7K2P9" }
+```
+If invalid or expired, returns `{ "type": "error", "message": "Invalid or expired invite link" }`.
+
+---
+
+## 13. `join-request` & `waiting` & `admit-request`
+
+**Direction:** Guest → Server → Owner
+
+**When:** Guest requests to enter the room. Instead of joining immediately, they are held in a waiting state until admitted.
+
+**Guest payload:**
+```json
+{ "type": "join-request", "roomId": "X7K2P9", "name": "Aziz" }
+```
+
+**Server → Guest response:**
+```json
+{ "type": "waiting", "requestId": "req-uuid-1234" }
+```
+
+**Server → Owner notification:**
+```json
+{ "type": "admit-request", "requestId": "req-uuid-1234", "name": "Aziz", "clientId": "c-9f8e7d" }
+```
+
+---
+
+## 14. `admit-response`
+
+**Direction:** Owner → Server
+
+**When:** Owner clicks "Admit" or "Decline" in the admit panel.
+
+**Payload:**
+```json
+{ "type": "admit-response", "requestId": "req-uuid-1234", "admitted": true }
+```
+
+**Server behavior:**
+- If `admitted: true`: Guest receives `existing-peers` and room members receive `peer-joined`.
+- If `admitted: false`: Guest receives `{ "type": "join-rejected", "reason": "The host declined your request" }`.
+
+---
+
+## 15. `cancel-join-request` & `admit-request-cancelled`
+
+**Direction:** Guest → Server, Server → Owner
+
+**When:** Guest clicks cancel while waiting, or disconnects.
+
+**Guest payload:**
+```json
+{ "type": "cancel-join-request", "requestId": "req-uuid-1234" }
+```
+
+**Server → Owner notification:**
+```json
+{ "type": "admit-request-cancelled", "requestId": "req-uuid-1234" }
+```
+
+---
+
+## 16. `owner-changed`
+
+**Direction:** Server → Room members
+
+**When:** The room creator/owner leaves, the server designates the next member as owner.
+
+**Payload:**
+```json
+{ "type": "owner-changed", "newOwnerId": "c-4d5e6f" }
+```
+
+---
+
 ## Open questions (things not decided yet — revisit before/while coding)
 
 - **Room full / room doesn't exist:** what does the server send back to

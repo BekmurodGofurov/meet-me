@@ -8,7 +8,7 @@ export class RoomPage {
   }
 
   async open() {
-    await this.page.goto('/')
+    await this.page.goto('/lobby')
   }
 
   async enterName(name) {
@@ -30,6 +30,14 @@ export class RoomPage {
     for (let i = 0; i < code.length; i += 1) {
       await boxes.nth(i).fill(code[i])
     }
+  }
+
+  async admitGuest(name) {
+    const admitBtn = name
+      ? this.page.getByRole('button', { name: `Admit ${name}` })
+      : this.page.getByRole('button', { name: /^admit$/i })
+    await expect(admitBtn).toBeVisible({ timeout: 10000 })
+    await admitBtn.click()
   }
 
   roomCodeText() {

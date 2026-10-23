@@ -89,6 +89,7 @@ export default function useRoom(tracksRef) {
   const [remoteStreams, setRemoteStreams] = useState({})
   const [remoteScreenStreams, setRemoteScreenStreams] = useState({})
   const [remoteMedia, setRemoteMedia] = useState({})
+  const remoteMediaRef = useRef({})
   const [roomError, setRoomError] = useState('')
   const [messages, setMessages] = useState([])
   const [rejoining, setRejoining] = useState(Boolean(initialSession))
@@ -97,6 +98,15 @@ export default function useRoom(tracksRef) {
   const [rememberedName, setRememberedName] = useState(
     () => initialSession?.name ?? loadName(),
   )
+
+  // Waiting Room, Admit system & Invite Link state
+  const [waitingForAdmit, setWaitingForAdmit] = useState(false)
+  const waitingRequestIdRef = useRef(null)
+  const [admitRequests, setAdmitRequests] = useState([])
+  const [isOwner, setIsOwner] = useState(false)
+  const [inviteLink, setInviteLink] = useState(null)
+  const [resolvedRoomId, setResolvedRoomId] = useState(null)
+  const [resolveError, setResolveError] = useState(null)
 
   const send = useCallback((message) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -154,14 +164,15 @@ export default function useRoom(tracksRef) {
 
       pc.ontrack = (event) => {
         const { track } = event
-        // Use a stable label attached to the transceiver at connection time to
-        // tell camera from screen. Falling back to index-based detection is
-        // fragile when one side has no camera track and the orders diverge.
         const transceiver = event.transceiver
-        const isScreen = transceiver
-          ? transceiver._isScreen === true
-          : track.kind === 'video' &&
-            remoteStreamsRef.current.get(peerId)?.getVideoTracks()?.length > 0
+        const remoteInfo = remoteMediaRef.current?.[peerId]
+
+        const isScreen =
+          Boolean(track.id && remoteInfo?.screenTrackId && track.id === remoteInfo.screenTrackId) ||
+          (transceiver && transceiver._isScreen === true) ||
+          Boolean(remoteInfo?.screenSharing && !remoteInfo?.cameraOn) ||
+          (track.kind === 'video' &&
+            remoteStreamsRef.current.get(peerId)?.getVideoTracks()?.length > 0)
 
         if (isScreen) {
           let screenStream = remoteScreenStreamsRef.current.get(peerId)
@@ -228,6 +239,7 @@ export default function useRoom(tracksRef) {
       remoteStreamsRef.current.delete(peerId)
       remoteScreenStreamsRef.current.delete(peerId)
       pendingCandidatesRef.current.delete(peerId)
+      delete remoteMediaRef.current[peerId]
 
       setRemoteStreams((prev) => {
         const next = { ...prev }
@@ -307,6 +319,8 @@ export default function useRoom(tracksRef) {
             isRejoiningRef.current = false
             setRememberedName(data.name)
             setMessages([])
+            setIsOwner(true)
+            setWaitingForAdmit(false)
             saveSession(data.roomId, data.name)
             storedSessionRef.current = { roomId: data.roomId, name: data.name }
             break
@@ -320,6 +334,9 @@ export default function useRoom(tracksRef) {
             isRejoiningRef.current = false
             setRememberedName(data.name)
             setMessages([])
+            setWaitingForAdmit(false)
+            waitingRequestIdRef.current = null
+            setIsOwner(Boolean(data.ownerId && data.ownerId === data.clientId))
             saveSession(data.roomId, data.name)
             storedSessionRef.current = { roomId: data.roomId, name: data.name }
 
@@ -358,6 +375,44 @@ export default function useRoom(tracksRef) {
             break
           }
 
+          case 'owner-changed':
+            setIsOwner(data.newOwnerId === myIdRef.current)
+            break
+
+          case 'waiting':
+            setWaitingForAdmit(true)
+            waitingRequestIdRef.current = data.requestId
+            setRoomError('')
+            break
+
+          case 'join-rejected':
+            setWaitingForAdmit(false)
+            waitingRequestIdRef.current = null
+            setRoomError(data.reason || 'The host declined your join request.')
+            break
+
+          case 'admit-request':
+            setAdmitRequests((prev) => {
+              if (prev.some((r) => r.requestId === data.requestId)) return prev
+              return [...prev, { requestId: data.requestId, name: data.name, clientId: data.clientId }]
+            })
+            break
+
+          case 'admit-request-cancelled':
+            setAdmitRequests((prev) => prev.filter((r) => r.requestId !== data.requestId))
+            break
+
+          case 'invite-created': {
+            const origin = window.location.origin
+            setInviteLink(`${origin}/join/${data.token}`)
+            break
+          }
+
+          case 'invite-resolved':
+            setResolvedRoomId(data.roomId)
+            setResolveError(null)
+            break
+
           case 'offer':
           case 'answer':
             await handleDescription(data.senderId, data.payload)
@@ -381,16 +436,41 @@ export default function useRoom(tracksRef) {
             break
           }
 
-          case 'media-state':
+          case 'media-state': {
+            const nextMedia = {
+              cameraOn: data.cameraOn,
+              micOn: data.micOn,
+              ...(data.screenSharing !== undefined && { screenSharing: Boolean(data.screenSharing) }),
+              ...(data.screenTrackId !== undefined && { screenTrackId: data.screenTrackId }),
+            }
+            remoteMediaRef.current[data.from] = nextMedia
             setRemoteMedia((prev) => ({
               ...prev,
-              [data.from]: {
-                cameraOn: data.cameraOn,
-                micOn: data.micOn,
-                ...(data.screenSharing !== undefined && { screenSharing: Boolean(data.screenSharing) }),
-              },
+              [data.from]: nextMedia,
             }))
-            if (!data.screenSharing) {
+
+            if (data.screenSharing && data.screenTrackId) {
+              const cameraStream = remoteStreamsRef.current.get(data.from)
+              const screenTrack = cameraStream?.getVideoTracks()?.find((t) => t.id === data.screenTrackId)
+              if (screenTrack) {
+                if (typeof cameraStream.removeTrack === 'function') {
+                  cameraStream.removeTrack(screenTrack)
+                }
+                const remainingTracks = cameraStream.getTracks().filter((t) => t.id !== screenTrack.id)
+                const updatedCamera = new MediaStream(remainingTracks)
+                remoteStreamsRef.current.set(data.from, updatedCamera)
+                setRemoteStreams((prev) => ({ ...prev, [data.from]: updatedCamera }))
+
+                let screenStream = remoteScreenStreamsRef.current.get(data.from)
+                if (!screenStream) screenStream = new MediaStream()
+                if (!screenStream.getTracks().some((t) => t.id === screenTrack.id)) {
+                  screenStream.addTrack(screenTrack)
+                }
+                const updatedScreen = new MediaStream(screenStream.getTracks())
+                remoteScreenStreamsRef.current.set(data.from, updatedScreen)
+                setRemoteScreenStreams((prev) => ({ ...prev, [data.from]: updatedScreen }))
+              }
+            } else if (!data.screenSharing) {
               remoteScreenStreamsRef.current.delete(data.from)
               setRemoteScreenStreams((prev) => {
                 const next = { ...prev }
@@ -399,6 +479,7 @@ export default function useRoom(tracksRef) {
               })
             }
             break
+          }
 
           case 'chat-message':
             setMessages((prev) => [
@@ -416,7 +497,9 @@ export default function useRoom(tracksRef) {
               isRejoiningRef.current = false
             }
 
-            if (wasRejoining) {
+            if (data.message === 'Invalid or expired invite link') {
+              setResolveError(data.message)
+            } else if (wasRejoining) {
               // A stale room was deleted while away; silently return to the clean home page.
               setRoomError('')
             } else {
@@ -447,8 +530,6 @@ export default function useRoom(tracksRef) {
       remoteScreenStreams.clear()
       pendingCandidates.clear()
 
-      // Detach first: a discarded socket must not write state belonging to the
-      // socket that replaced it.
       socket.onopen = null
       socket.onerror = null
       socket.onclose = null
@@ -466,7 +547,10 @@ export default function useRoom(tracksRef) {
     (kind, track) => {
       if (kind === 'video') mediaStateRef.current.cameraOn = Boolean(track)
       else if (kind === 'audio') mediaStateRef.current.micOn = Boolean(track)
-      else if (kind === 'screen') mediaStateRef.current.screenSharing = Boolean(track)
+      else if (kind === 'screen') {
+        mediaStateRef.current.screenSharing = Boolean(track)
+        mediaStateRef.current.screenTrackId = track ? track.id : null
+      }
 
       peersRef.current.forEach((peer) => {
         const { pc, senders } = peer
@@ -474,9 +558,6 @@ export default function useRoom(tracksRef) {
         if (!track) {
           if (senders[kind]) {
             senders[kind].replaceTrack(null)
-            // Reset the transceiver direction to recvonly so the remote side
-            // knows we stopped sending. This also triggers onnegotiationneeded
-            // so the change is actually renegotiated rather than silently lost.
             const transceiver = pc.getTransceivers().find((t) => t.sender === senders[kind])
             if (transceiver && transceiver.direction !== 'recvonly') {
               transceiver.direction = 'recvonly'
@@ -487,29 +568,33 @@ export default function useRoom(tracksRef) {
 
         if (senders[kind]) {
           senders[kind].replaceTrack(track)
+          const transceiver = pc.getTransceivers().find((t) => t.sender === senders[kind])
+          if (transceiver && transceiver.direction !== 'sendrecv') {
+            transceiver.direction = 'sendrecv'
+          }
           return
         }
 
-        // Reuse the receive-only m-line created for this kind if there is one,
-        // rather than growing the session description on every toggle. Either
-        // path triggers onnegotiationneeded, which republishes the session.
-        // Use the _isScreen tag set at transceiver creation time rather than
-        // positional indexing, which breaks when one side has no camera.
         const transceivers = pc.getTransceivers ? pc.getTransceivers() : []
+        const videoTransceivers = transceivers.filter(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video',
+        )
 
         let reusable = null
         if (kind === 'video') {
-          reusable = transceivers.find(
-            (t) =>
-              t._isScreen === false &&
-              (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
-          )
+          reusable =
+            transceivers.find(
+              (t) =>
+                t._isScreen === false &&
+                (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
+            ) || videoTransceivers[0]
         } else if (kind === 'screen') {
-          reusable = transceivers.find(
-            (t) =>
-              t._isScreen === true &&
-              (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
-          )
+          reusable =
+            transceivers.find(
+              (t) =>
+                t._isScreen === true &&
+                (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
+            ) || videoTransceivers[1]
         } else if (kind === 'audio') {
           reusable = transceivers.find(
             (t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio',
@@ -518,12 +603,15 @@ export default function useRoom(tracksRef) {
 
         if (reusable) {
           reusable.direction = 'sendrecv'
-          reusable.sender.replaceTrack(track)
-          senders[kind] = reusable.sender
+          if (reusable.sender) {
+            reusable.sender.replaceTrack(track)
+            senders[kind] = reusable.sender
+          } else {
+            senders[kind] = pc.addTrack(track)
+          }
         } else {
           const sender = pc.addTrack(track)
           senders[kind] = sender
-          // Tag newly added transceivers too
           if (kind === 'video' || kind === 'screen') {
             const newT = pc.getTransceivers().find((t) => t.sender === sender)
             if (newT) newT._isScreen = kind === 'screen'
@@ -558,6 +646,50 @@ export default function useRoom(tracksRef) {
     [send],
   )
 
+  const requestJoin = useCallback(
+    (roomId, name) => {
+      isRejoiningRef.current = false
+      setRoomError('')
+      setRememberedName(name)
+      saveName(name)
+      send({ type: 'join-request', roomId, name })
+    },
+    [send],
+  )
+
+  const cancelWaiting = useCallback(() => {
+    const reqId = waitingRequestIdRef.current
+    if (reqId) {
+      send({ type: 'cancel-join-request', requestId: reqId })
+    }
+    setWaitingForAdmit(false)
+    waitingRequestIdRef.current = null
+    setRoomError('')
+  }, [send])
+
+  const admitGuest = useCallback(
+    (requestId, admitted) => {
+      send({ type: 'admit-response', requestId, admitted })
+      setAdmitRequests((prev) => prev.filter((r) => r.requestId !== requestId))
+    },
+    [send],
+  )
+
+  const createInvite = useCallback(() => {
+    if (currentRoom) {
+      send({ type: 'create-invite', roomId: currentRoom })
+    }
+  }, [send, currentRoom])
+
+  const resolveInvite = useCallback(
+    (token) => {
+      setResolvedRoomId(null)
+      setResolveError(null)
+      send({ type: 'resolve-invite', token })
+    },
+    [send],
+  )
+
   const leaveRoom = useCallback(() => {
     clearSession()
     storedSessionRef.current = null
@@ -570,9 +702,6 @@ export default function useRoom(tracksRef) {
     participantNamesRef.current.clear()
     pendingCandidatesRef.current.clear()
 
-    // Tell the server explicitly - the socket itself stays open so this
-    // connection can create/join another room next, which means the server
-    // has no other way to learn this room was left.
     send({ type: 'leave-room' })
 
     setCurrentRoom(null)
@@ -581,8 +710,14 @@ export default function useRoom(tracksRef) {
     setRemoteStreams({})
     setRemoteScreenStreams({})
     setRemoteMedia({})
+    remoteMediaRef.current = {}
     setRoomError('')
     setMessages([])
+    setWaitingForAdmit(false)
+    waitingRequestIdRef.current = null
+    setAdmitRequests([])
+    setIsOwner(false)
+    setInviteLink(null)
   }, [send])
 
   const sendChatMessage = useCallback(
@@ -592,9 +727,6 @@ export default function useRoom(tracksRef) {
 
       send({ type: 'chat-message', text: trimmed })
 
-      // The server broadcasts to everyone except the sender, so the sender's
-      // own copy is added here rather than waiting for a message that will
-      // never arrive.
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), kind: 'chat', from: myIdRef.current, fromName: me?.name ?? 'You', text: trimmed },
@@ -629,5 +761,18 @@ export default function useRoom(tracksRef) {
     joinRoom,
     leaveRoom,
     sendChatMessage,
+
+    // New features:
+    waitingForAdmit,
+    admitRequests,
+    isOwner,
+    inviteLink,
+    resolvedRoomId,
+    resolveError,
+    requestJoin,
+    cancelWaiting,
+    admitGuest,
+    createInvite,
+    resolveInvite,
   }
 }

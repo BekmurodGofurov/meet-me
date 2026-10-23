@@ -15,8 +15,22 @@ export default function Room({
   onLeave,
   messages,
   onSendMessage,
+  inviteLink,
+  onCreateInvite,
 }) {
   const [manualPinnedId, setManualPinnedId] = useState(null)
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  const handleCopyLink = async () => {
+    if (!inviteLink) return
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy invite link', err)
+    }
+  }
 
   const screenTiles = []
   if (media.screenOn && localScreenStream) {
@@ -143,6 +157,27 @@ export default function Room({
                 onLeave={onLeave}
               />
             </div>
+          </div>
+
+          {/* Share invite link bar */}
+          <div className="room__invite">
+            {inviteLink ? (
+              <div className="room__invite-link">
+                <span className="room__invite-url" title={inviteLink}>{inviteLink}</span>
+                <button
+                  className="is-secondary room__invite-copy"
+                  onClick={handleCopyLink}
+                >
+                  {linkCopied ? 'Copied!' : 'Copy link'}
+                </button>
+              </div>
+            ) : (
+              onCreateInvite && (
+                <button className="is-secondary room__invite-btn" onClick={onCreateInvite}>
+                  🔗 Get invite link
+                </button>
+              )
+            )}
           </div>
 
           {media.mediaError && <p className="media-error">{media.mediaError}</p>}
