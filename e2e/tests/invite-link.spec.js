@@ -29,9 +29,8 @@ test('guest can open invite link URL, resolve room, request to join, and be admi
   // Guest's JoinPage resolves the token and redirects to /lobby with roomId prefilled
   await expect(guestPage).toHaveURL(new RegExp(`/lobby.*roomId=${code}`), { timeout: 10000 })
 
-  // Guest enters name and continues
+  // Guest enters name on pre-join screen
   await guestPage.getByPlaceholder(/name|bekmurod/i).fill('Aziz')
-  await guestPage.getByRole('button', { name: /continue/i }).click()
 
   // Guest clicks "Request to join room"
   await guestPage.getByRole('button', { name: /request to join|join room/i }).click()

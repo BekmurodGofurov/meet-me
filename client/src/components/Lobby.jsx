@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import CodeInput from './CodeInput'
+import PreJoin from './PreJoin'
 import { loadName, saveName } from '../session'
 
 const CODE_LENGTH = 6
@@ -12,7 +13,15 @@ function getSearchParams() {
   }
 }
 
-export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled, initialName = '' }) {
+export default function Lobby({
+  onCreate,
+  onJoin,
+  onRequestJoin,
+  error,
+  disabled,
+  initialName = '',
+  media,
+}) {
   const searchParams = getSearchParams()
   const actionParam = searchParams.get('action') // 'create' | 'join' | null
   const roomIdParam = searchParams.get('roomId') // 'abc123' from invite link
@@ -66,7 +75,7 @@ export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled
   }
 
   const submitJoin = (value = code) => {
-    const finalCode = (value || roomIdParam || code || '').trim().toLowerCase()
+    const finalCode = (value || code || '').trim().toLowerCase()
     if (finalCode.length === CODE_LENGTH && !disabled) {
       saveName(trimmedName)
       const joinFn = onRequestJoin || onJoin
@@ -74,15 +83,33 @@ export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled
     }
   }
 
+  // When arriving via an invite link with roomId:
+  // Render Microsoft Teams style pre-join screen (camera preview, mic/camera controls, name)
+  // No room code is displayed or requested from the user.
+  if (roomIdParam) {
+    return (
+      <PreJoin
+        roomId={roomIdParam}
+        initialName={remembered}
+        media={media}
+        onSubmitJoin={(codeToJoin, nameToJoin) => {
+          saveName(nameToJoin)
+          const joinFn = onRequestJoin || onJoin
+          joinFn(codeToJoin, nameToJoin)
+        }}
+        onCancel={() => {
+          window.location.href = '/'
+        }}
+        disabled={disabled}
+        error={error}
+      />
+    )
+  }
+
   if (step === 'name') {
     return (
       <div className="lobby">
         <h2>Enter your name !</h2>
-        {roomIdParam && (
-          <p className="lobby__hint">
-            You're invited to join room <strong>{roomIdParam}</strong>
-          </p>
-        )}
         <input
           autoFocus
           placeholder="Your name... e.g. Bekmurod"
@@ -109,32 +136,6 @@ export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled
         </button>
         <button className="is-secondary" onClick={() => setStep('join')}>
           Join a room
-        </button>
-
-        <button className="is-link" onClick={() => setStep('name')}>
-          Change name
-        </button>
-
-        {error && <p className="lobby__error">{error}</p>}
-      </div>
-    )
-  }
-
-  // When arriving via an invite link with roomId prefilled:
-  // User doesn't need to manually type or see 6 code input boxes.
-  if (roomIdParam && step === 'join') {
-    return (
-      <div className="lobby">
-        <h2>Ready to join?</h2>
-        <p className="lobby__hint">Joining as <strong>{trimmedName}</strong></p>
-
-        <div className="lobby__room-preview">
-          <span className="lobby__room-preview-label">Room Code</span>
-          <span className="lobby__room-preview-code">{roomIdParam}</span>
-        </div>
-
-        <button disabled={disabled} onClick={() => submitJoin(roomIdParam)}>
-          Request to join room
         </button>
 
         <button className="is-link" onClick={() => setStep('name')}>

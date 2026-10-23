@@ -99,6 +99,7 @@ export default function App() {
                   error={room.roomError}
                   disabled={room.connectionStatus !== 'connected'}
                   initialName={room.rememberedName}
+                  media={media}
                 />
               )}
             </div>
