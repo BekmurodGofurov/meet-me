@@ -118,6 +118,8 @@ jobs:
       # --use-fake-device-for-media-stream needs to work headlessly.
       - name: Install Playwright browsers
         working-directory: e2e
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: npx playwright install --with-deps chromium
 
       # No mkcert certs exist in CI - E2E=1 (set in playwright.config.js's
