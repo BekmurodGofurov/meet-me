@@ -83,7 +83,7 @@ export default function Room({
   return (
     <div className="room">
       <div className="room__layout">
-        {pinnedTile && (
+        {pinnedTile && otherTiles.length > 0 && (
           <div className="stage-sidebar">
             {otherTiles.map((tile) => (
               <VideoTile

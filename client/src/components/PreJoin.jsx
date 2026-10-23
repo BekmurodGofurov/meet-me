@@ -105,7 +105,7 @@ export default function PreJoin({
           </div>
         </div>
 
-        {/* Right Column: Name & Device Settings Card */}
+        {/* Right Column: Name & Join Action Card */}
         <form className="prejoin__settings-card" onSubmit={handleSubmit}>
           <div className="prejoin__field">
             <label htmlFor="prejoin-name-input">Your name</label>
@@ -117,49 +117,6 @@ export default function PreJoin({
               maxLength={24}
               onChange={(e) => handleNameChange(e.target.value)}
             />
-          </div>
-
-          {/* Device Settings (Teams style) */}
-          <div className="prejoin__devices-list">
-            <div className="prejoin__device-item">
-              <div className="prejoin__device-item-left">
-                <MicIcon off={!media?.micOn} />
-                <div className="prejoin__device-item-info">
-                  <span className="prejoin__device-item-title">Microphone</span>
-                  <span className="prejoin__device-item-status">
-                    {media?.micOn ? 'Unmuted' : 'Muted'}
-                  </span>
-                </div>
-              </div>
-              <label className="prejoin__switch" aria-label="Toggle microphone">
-                <input
-                  type="checkbox"
-                  checked={Boolean(media?.micOn)}
-                  onChange={() => media?.toggleMic?.()}
-                />
-                <span className="prejoin__switch-slider" />
-              </label>
-            </div>
-
-            <div className="prejoin__device-item">
-              <div className="prejoin__device-item-left">
-                <CameraIcon off={!media?.cameraOn} />
-                <div className="prejoin__device-item-info">
-                  <span className="prejoin__device-item-title">Camera</span>
-                  <span className="prejoin__device-item-status">
-                    {media?.cameraOn ? 'Video on' : 'Video off'}
-                  </span>
-                </div>
-              </div>
-              <label className="prejoin__switch" aria-label="Toggle camera">
-                <input
-                  type="checkbox"
-                  checked={Boolean(media?.cameraOn)}
-                  onChange={() => media?.toggleCamera?.()}
-                />
-                <span className="prejoin__switch-slider" />
-              </label>
-            </div>
           </div>
 
           {(error || media?.mediaError) && (
