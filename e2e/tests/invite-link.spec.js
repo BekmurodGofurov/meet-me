@@ -15,6 +15,7 @@ test('guest can open invite link URL, resolve room, request to join, and be admi
   await owner.roomCodeText().click()
   const linkInput = owner.page.locator('.topbar__invite-input')
   await expect(linkInput).toBeVisible()
+  await expect(linkInput).toHaveValue(/\/join\//, { timeout: 10000 })
   const inviteUrl = await linkInput.inputValue()
   expect(inviteUrl).toContain('/join/')
 
