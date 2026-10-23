@@ -33,8 +33,8 @@ test('guest can open invite link URL, resolve room, request to join, and be admi
   await guestPage.getByPlaceholder(/name|bekmurod/i).fill('Aziz')
   await guestPage.getByRole('button', { name: /continue/i }).click()
 
-  // Guest clicks "Join room"
-  await guestPage.getByRole('button', { name: /join room/i }).click()
+  // Guest clicks "Request to join room"
+  await guestPage.getByRole('button', { name: /request to join|join room/i }).click()
 
   // Guest is in waiting room
   await expect(guestPage.getByText(/waiting for host/i)).toBeVisible()

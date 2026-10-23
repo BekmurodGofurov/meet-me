@@ -66,10 +66,11 @@ export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled
   }
 
   const submitJoin = (value = code) => {
-    if (value.length === CODE_LENGTH && !disabled) {
+    const finalCode = (value || roomIdParam || code || '').trim().toLowerCase()
+    if (finalCode.length === CODE_LENGTH && !disabled) {
       saveName(trimmedName)
       const joinFn = onRequestJoin || onJoin
-      joinFn(value, trimmedName)
+      joinFn(finalCode, trimmedName)
     }
   }
 
@@ -77,6 +78,11 @@ export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled
     return (
       <div className="lobby">
         <h2>Enter your name !</h2>
+        {roomIdParam && (
+          <p className="lobby__hint">
+            You're invited to join room <strong>{roomIdParam}</strong>
+          </p>
+        )}
         <input
           autoFocus
           placeholder="Your name... e.g. Bekmurod"
@@ -103,6 +109,32 @@ export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled
         </button>
         <button className="is-secondary" onClick={() => setStep('join')}>
           Join a room
+        </button>
+
+        <button className="is-link" onClick={() => setStep('name')}>
+          Change name
+        </button>
+
+        {error && <p className="lobby__error">{error}</p>}
+      </div>
+    )
+  }
+
+  // When arriving via an invite link with roomId prefilled:
+  // User doesn't need to manually type or see 6 code input boxes.
+  if (roomIdParam && step === 'join') {
+    return (
+      <div className="lobby">
+        <h2>Ready to join?</h2>
+        <p className="lobby__hint">Joining as <strong>{trimmedName}</strong></p>
+
+        <div className="lobby__room-preview">
+          <span className="lobby__room-preview-label">Room Code</span>
+          <span className="lobby__room-preview-code">{roomIdParam}</span>
+        </div>
+
+        <button disabled={disabled} onClick={() => submitJoin(roomIdParam)}>
+          Request to join room
         </button>
 
         <button className="is-link" onClick={() => setStep('name')}>

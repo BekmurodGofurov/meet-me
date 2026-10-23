@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Lobby from './Lobby'
 
 beforeEach(() => {
@@ -115,6 +115,58 @@ describe('Lobby - join step', () => {
     await user.click(screen.getByRole('button', { name: /back/i }))
 
     expect(screen.getByText('Hi, Aziz')).toBeInTheDocument()
+  })
+})
+
+describe('Lobby - invite link with roomId', () => {
+  const originalLocation = window.location
+
+  beforeEach(() => {
+    delete window.location
+    window.location = new URL('http://localhost:5173/lobby?action=join&roomId=f54ffe')
+  })
+
+  afterEach(() => {
+    window.location = originalLocation
+  })
+
+  it('skips 6 code input boxes and directly shows Request to join room when name is remembered', async () => {
+    const user = userEvent.setup()
+    const onJoin = vi.fn()
+    render(<Lobby onJoin={onJoin} error="" disabled={false} initialName="Bekmurod" />)
+
+    // CodeInput should not be rendered
+    expect(screen.queryAllByLabelText(/room code character/i)).toHaveLength(0)
+
+    // Ready to join UI with preview code and request button
+    expect(screen.getByText('Ready to join?')).toBeInTheDocument()
+    expect(screen.getByText('f54ffe')).toBeInTheDocument()
+    const requestBtn = screen.getByRole('button', { name: /request to join room/i })
+    expect(requestBtn).toBeInTheDocument()
+
+    await user.click(requestBtn)
+    expect(onJoin).toHaveBeenCalledWith('f54ffe', 'Bekmurod')
+  })
+
+  it('asks for name first when not remembered, then goes straight to Request to join room', async () => {
+    const user = userEvent.setup()
+    const onJoin = vi.fn()
+    render(<Lobby onJoin={onJoin} error="" disabled={false} />)
+
+    // Name prompt is shown first
+    expect(screen.getByRole('heading', { name: /name/i })).toBeInTheDocument()
+    expect(screen.getByText(/f54ffe/)).toBeInTheDocument()
+
+    // Enter name
+    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Aziz{Enter}')
+
+    // Now directly on Ready to join screen, without CodeInput
+    expect(screen.queryAllByLabelText(/room code character/i)).toHaveLength(0)
+    expect(screen.getByText('Ready to join?')).toBeInTheDocument()
+
+    const requestBtn = screen.getByRole('button', { name: /request to join room/i })
+    await user.click(requestBtn)
+    expect(onJoin).toHaveBeenCalledWith('f54ffe', 'Aziz')
   })
 })
 
