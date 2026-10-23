@@ -19,6 +19,10 @@ test('guest can open invite link URL, resolve room, request to join, and be admi
   const inviteUrl = await linkInput.inputValue()
   expect(inviteUrl).toContain('/join/')
 
+  // Close invite modal
+  await owner.page.locator('.topbar__invite-modal-close').click()
+  await expect(linkInput).not.toBeVisible()
+
   const guestPage = await guestContext.newPage()
   await guestPage.goto(inviteUrl)
 
