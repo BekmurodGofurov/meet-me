@@ -27,7 +27,7 @@ test('alone in the room, your own tile renders as the large active view, not a s
   await expect(tile).not.toHaveClass(/is-clickable/)
 })
 
-test('clicking room code copies it to the clipboard', async ({ page, context }) => {
+test('clicking invite button opens modal with room code and share link, and copies code to clipboard', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
 
   const room = new RoomPage(page)
@@ -36,7 +36,12 @@ test('clicking room code copies it to the clipboard', async ({ page, context }) 
   const code = await room.createRoom()
 
   await room.roomCodeText().click()
-  await expect(room.roomCodeText()).toHaveText('Copied!')
+  await expect(page.getByText(code)).toBeVisible()
+  await expect(page.getByRole('button', { name: /copy code/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /copy link/i })).toBeVisible()
+
+  await page.getByRole('button', { name: /copy code/i }).click()
+  await expect(page.getByRole('button', { name: /copied/i })).toBeVisible()
 
   const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
   expect(clipboardText).toBe(code)

@@ -20,8 +20,8 @@ export class RoomPage {
     await this.page.getByRole('button', { name: /create a room/i }).click()
     const roomButton = this.page.locator('.topbar__room')
     await expect(roomButton).toBeVisible()
-    const text = await roomButton.textContent()
-    return text.replace(/^Room /, '').trim()
+    const code = (await roomButton.getAttribute('data-room-id')) || (await roomButton.textContent()).replace(/^Room /, '').trim()
+    return code
   }
 
   async joinRoom(code) {

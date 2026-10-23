@@ -15,7 +15,7 @@ test('refreshing the page automatically rejoins the same room', async ({ page })
   await page.reload()
 
   await expect(page.getByText(/rejoining your room/i).or(room.roomCodeText())).toBeVisible()
-  await expect(room.roomCodeText()).toHaveText(`Room ${code}`, { timeout: 10000 })
+  await expect(room.roomCodeText()).toHaveAttribute('data-room-id', code, { timeout: 10000 })
 })
 
 test('leaving a room forgets it, so a later refresh goes to the lobby, not back into it', async ({

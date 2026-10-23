@@ -119,6 +119,8 @@ export default function App() {
                 roomId={room.currentRoom}
                 admitRequests={room.isOwner ? room.admitRequests : []}
                 onShowAdmitPanel={() => setAdmitPanelClosed((prev) => !prev)}
+                inviteLink={room.inviteLink}
+                onCreateInvite={handleCreateInvite}
               />
 
               {showAdmitPanel && room.isOwner && (
@@ -149,8 +151,6 @@ export default function App() {
                   onLeave={handleLeave}
                   messages={room.messages}
                   onSendMessage={room.sendChatMessage}
-                  inviteLink={room.inviteLink}
-                  onCreateInvite={handleCreateInvite}
                 />
               )}
             </div>
