@@ -126,8 +126,12 @@ input {
   &:hover .theme-toggle-icon {
     transform: rotate(20deg);
 
+    &--sun {
+      color: #d97706;
+    }
+
     &--moon {
-      color: #dfdfef;
+      color: #6b4de6;
     }
   }
 }
@@ -593,12 +597,14 @@ input {
   bottom: max(20px, env(safe-area-inset-bottom, 20px));
   transform: translateX(-50%);
   z-index: 100;
-  background: rgba(15, 16, 23, 0.75);
-  backdrop-filter: blur(10px);
+  background: var(--controls-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   padding: 8px 14px;
   border-radius: 999px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--controls-shadow);
+  border: 1px solid var(--controls-border);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .media-error {
@@ -622,13 +628,13 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #fff;
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  background: var(--controls-btn-neutral-bg);
+  border: 1px solid var(--controls-btn-neutral-border);
+  color: var(--controls-btn-neutral-text);
+  transition: background-color 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.22);
+    background: var(--controls-btn-neutral-hover);
   }
 
   &:active {
@@ -638,6 +644,7 @@ input {
   &:not(.is-on) {
     background: #e05555;
     border-color: #e05555;
+    color: #fff;
 
     &:hover {
       background: #c54343;
@@ -647,6 +654,7 @@ input {
   &.is-on {
     background: #4caf7d;
     border-color: #4caf7d;
+    color: #fff;
 
     &:hover {
       background: #3fa16e;
@@ -655,14 +663,26 @@ input {
 
   &--screen {
     &:not(.is-sharing) {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: rgba(255, 255, 255, 0.3);
+      background: var(--controls-btn-neutral-bg);
+      border-color: var(--controls-btn-neutral-border);
+      color: var(--controls-btn-neutral-text);
+
+      &:hover {
+        background: var(--controls-btn-neutral-hover);
+      }
+    }
+
+    &.is-sharing {
+      background: #4caf7d;
+      border-color: #4caf7d;
+      color: #fff;
     }
   }
 
   &--leave {
     background: #c23f3f;
     border-color: #c23f3f;
+    color: #fff;
 
     &:hover {
       background: #a82e2e;
@@ -801,10 +821,12 @@ input {
     position: relative;
     width: 100%;
     aspect-ratio: 4 / 3;
-    background: #181924;
-    border-radius: 10px;
+    background: var(--tile-bg);
+    border: 1px solid var(--tile-border);
+    border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--tile-shadow);
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
   video {
@@ -824,9 +846,27 @@ input {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 36px;
-    color: #9ca3af;
-    background: #181924;
+    background: var(--tile-bg);
+    color: var(--tile-placeholder-text);
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  &__avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--tile-avatar-bg);
+    color: var(--tile-avatar-text);
+    border: 2px solid var(--tile-avatar-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+    user-select: none;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
 
   figcaption {
@@ -857,6 +897,12 @@ input {
     max-width: 160px;
     flex-shrink: 0;
 
+    .video-tile__avatar {
+      width: 44px;
+      height: 44px;
+      font-size: 20px;
+    }
+
     figcaption {
       font-size: 11px;
     }
@@ -868,6 +914,12 @@ input {
       width: 100%;
       height: 72vh;
       max-height: 800px;
+    }
+
+    .video-tile__avatar {
+      width: 112px;
+      height: 112px;
+      font-size: 52px;
     }
 
     video {
@@ -895,6 +947,11 @@ input {
     .video-tile__placeholder {
       background: #111;
       color: #4caf7d;
+
+      svg {
+        width: 56px;
+        height: 56px;
+      }
     }
   }
 }

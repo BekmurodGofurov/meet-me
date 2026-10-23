@@ -61,7 +61,11 @@ export default function VideoTile({
         />
         {(!showVideo || !stream) && (
           <div className="video-tile__placeholder">
-            {isScreen ? <ScreenShareIcon /> : initial}
+            {isScreen ? (
+              <ScreenShareIcon />
+            ) : (
+              <div className="video-tile__avatar">{initial}</div>
+            )}
           </div>
         )}
       </div>
