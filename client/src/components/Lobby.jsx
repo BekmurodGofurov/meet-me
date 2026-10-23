@@ -4,12 +4,35 @@ import { loadName, saveName } from '../session'
 
 const CODE_LENGTH = 6
 
-export default function Lobby({ onCreate, onJoin, error, disabled, initialName = '' }) {
-  // If a name is already remembered or passed, start at choice step
+function getSearchParams() {
+  try {
+    return new URLSearchParams(window.location.search)
+  } catch {
+    return new URLSearchParams()
+  }
+}
+
+export default function Lobby({ onCreate, onJoin, onRequestJoin, error, disabled, initialName = '' }) {
+  const searchParams = getSearchParams()
+  const actionParam = searchParams.get('action') // 'create' | 'join' | null
+  const roomIdParam = searchParams.get('roomId') // 'abc123' from invite link
+
   const remembered = initialName || loadName()
-  const [step, setStep] = useState(remembered ? 'choice' : 'name')
+
+  // Pre-fill chars if roomIdParam exists
+  const initialChars = roomIdParam
+    ? roomIdParam.slice(0, CODE_LENGTH).split('').concat(Array(CODE_LENGTH).fill('')).slice(0, CODE_LENGTH)
+    : Array(CODE_LENGTH).fill('')
+
+  const [step, setStep] = useState(() => {
+    if (!remembered) return 'name'
+    if (actionParam === 'create') return 'choice'
+    if (actionParam === 'join' || roomIdParam) return 'join'
+    return 'choice'
+  })
+
   const [name, setName] = useState(remembered)
-  const [chars, setChars] = useState(Array(CODE_LENGTH).fill(''))
+  const [chars, setChars] = useState(initialChars)
 
   const trimmedName = name.trim()
   const code = chars.join('')
@@ -25,6 +48,14 @@ export default function Lobby({ onCreate, onJoin, error, disabled, initialName =
   const handleContinue = () => {
     if (!trimmedName) return
     saveName(trimmedName)
+    if (actionParam === 'create') {
+      onCreate(trimmedName)
+      return
+    }
+    if (actionParam === 'join' || roomIdParam) {
+      setStep('join')
+      return
+    }
     setStep('choice')
   }
 
@@ -37,7 +68,8 @@ export default function Lobby({ onCreate, onJoin, error, disabled, initialName =
   const submitJoin = (value = code) => {
     if (value.length === CODE_LENGTH && !disabled) {
       saveName(trimmedName)
-      onJoin(value, trimmedName)
+      const joinFn = onRequestJoin || onJoin
+      joinFn(value, trimmedName)
     }
   }
 

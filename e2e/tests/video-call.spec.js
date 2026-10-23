@@ -19,6 +19,7 @@ test('turning cameras on negotiates real peer-to-peer video between two browsers
   await member.open()
   await member.enterName('Aziz')
   await member.joinRoom(code)
+  await owner.admitGuest('Aziz')
 
   await owner.turnCameraOn()
   await member.turnCameraOn()
@@ -59,6 +60,7 @@ test('turning the camera back off shows a placeholder instead of a frozen frame'
   await member.open()
   await member.enterName('Aziz')
   await member.joinRoom(code)
+  await owner.admitGuest('Aziz')
 
   await owner.turnCameraOn()
   const memberViewOfOwner = member.tileByLabel('Bekmurod').locator('video')
