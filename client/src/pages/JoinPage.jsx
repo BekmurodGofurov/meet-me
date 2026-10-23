@@ -1,15 +1,17 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 export default function JoinPage({ onResolveInvite, resolvedRoomId, resolveError }) {
   const { token } = useParams()
   const navigate = useNavigate()
+  const [timedOut, setTimedOut] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
     if (token && onResolveInvite) {
       onResolveInvite(token)
     }
-  }, [token, onResolveInvite])
+  }, [token, onResolveInvite, retryCount])
 
   useEffect(() => {
     if (resolvedRoomId) {
@@ -18,13 +20,43 @@ export default function JoinPage({ onResolveInvite, resolvedRoomId, resolveError
     }
   }, [resolvedRoomId, navigate])
 
-  if (resolveError) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!resolvedRoomId && !resolveError) {
+        setTimedOut(true)
+      }
+    }, 7000)
+    return () => clearTimeout(timer)
+  }, [resolvedRoomId, resolveError, retryCount])
+
+  if (resolveError || timedOut) {
+    const errorMsg =
+      resolveError ||
+      'Connection timed out. The invite link may have expired or the host is no longer in the room.'
+
     return (
       <div className="not-found">
         <div className="not-found__code">🔗</div>
-        <h1 className="not-found__title">Invalid invite link</h1>
-        <p className="not-found__sub">{resolveError}</p>
-        <button onClick={() => navigate('/')}>Go home</button>
+        <h1 className="not-found__title">Unable to join</h1>
+        <p className="not-found__sub">{errorMsg}</p>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+          {timedOut && !resolveError && (
+            <button
+              onClick={() => {
+                setTimedOut(false)
+                setRetryCount((c) => c + 1)
+              }}
+            >
+              Retry
+            </button>
+          )}
+          <button
+            className={timedOut && !resolveError ? 'is-secondary' : ''}
+            onClick={() => navigate('/')}
+          >
+            Go home
+          </button>
+        </div>
       </div>
     )
   }

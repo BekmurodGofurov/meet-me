@@ -76,9 +76,11 @@ export default function useRoom(tracksRef) {
   // the name has to already be known somewhere that isn't a stale closure
   // over participants state, so it's kept here instead.
   const participantNamesRef = useRef(new Map())
+  const isJoinRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/join/')
   // Read once on mount, before the connect effect runs, so it's available the instant
   // the socket opens rather than racing a state update.
   const [initialSession] = useState(() => {
+    if (isJoinRoute) return null
     const session = loadSession()
     if (session?.name && !loadName()) {
       saveName(session.name)
@@ -86,7 +88,7 @@ export default function useRoom(tracksRef) {
     return session
   })
   const storedSessionRef = useRef(initialSession)
-  const isRejoiningRef = useRef(Boolean(initialSession))
+  const isRejoiningRef = useRef(!isJoinRoute && Boolean(initialSession))
 
   const [connectionStatus, setConnectionStatus] = useState('connecting')
   const [currentRoom, setCurrentRoom] = useState(null)
@@ -98,7 +100,7 @@ export default function useRoom(tracksRef) {
   const remoteMediaRef = useRef({})
   const [roomError, setRoomError] = useState('')
   const [messages, setMessages] = useState([])
-  const [rejoining, setRejoining] = useState(Boolean(initialSession))
+  const [rejoining, setRejoining] = useState(!isJoinRoute && Boolean(initialSession))
   // Falls back to the standalone remembered name (survives leaving a room)
   // when there's no active session to rejoin.
   const [rememberedName, setRememberedName] = useState(
@@ -114,9 +116,13 @@ export default function useRoom(tracksRef) {
   const [resolvedRoomId, setResolvedRoomId] = useState(null)
   const [resolveError, setResolveError] = useState(null)
 
+  const pendingMessagesRef = useRef([])
+
   const send = useCallback((message) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message))
+    } else {
+      pendingMessagesRef.current.push(message)
     }
   }, [])
 
@@ -301,11 +307,19 @@ export default function useRoom(tracksRef) {
     socket.onopen = () => {
       setConnectionStatus('connected')
 
-      const stored = storedSessionRef.current || loadSession()
-      if (stored) {
-        storedSessionRef.current = stored
-        isRejoiningRef.current = true
-        post({ type: 'join-room', roomId: stored.roomId, name: stored.name })
+      // Flush any queued messages that were sent before socket opened
+      while (pendingMessagesRef.current.length > 0) {
+        const msg = pendingMessagesRef.current.shift()
+        post(msg)
+      }
+
+      if (!isJoinRoute) {
+        const stored = storedSessionRef.current || loadSession()
+        if (stored) {
+          storedSessionRef.current = stored
+          isRejoiningRef.current = true
+          post({ type: 'join-room', roomId: stored.roomId, name: stored.name })
+        }
       }
     }
     socket.onerror = () => setConnectionStatus('error')
@@ -547,7 +561,7 @@ export default function useRoom(tracksRef) {
         socket.close()
       }
     }
-  }, [tracksRef])
+  }, [tracksRef, isJoinRoute])
 
   const publishTrack = useCallback(
     (kind, track) => {

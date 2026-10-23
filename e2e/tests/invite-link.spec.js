@@ -1,0 +1,48 @@
+import { expect, test } from '@playwright/test'
+import { RoomPage } from './room-page.js'
+
+test('guest can open invite link URL, resolve room, request to join, and be admitted', async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext()
+  const guestContext = await browser.newContext()
+  const owner = new RoomPage(await ownerContext.newPage())
+
+  await owner.open()
+  await owner.enterName('Bekmurod')
+  const code = await owner.createRoom()
+
+  await owner.roomCodeText().click()
+  const linkInput = owner.page.locator('.topbar__invite-input')
+  await expect(linkInput).toBeVisible()
+  const inviteUrl = await linkInput.inputValue()
+  expect(inviteUrl).toContain('/join/')
+
+  const guestPage = await guestContext.newPage()
+  await guestPage.goto(inviteUrl)
+
+  // Guest's JoinPage resolves the token and redirects to /lobby with roomId prefilled
+  await expect(guestPage).toHaveURL(new RegExp(`/lobby.*roomId=${code}`), { timeout: 10000 })
+
+  // Guest enters name and continues
+  await guestPage.getByPlaceholder(/name|bekmurod/i).fill('Aziz')
+  await guestPage.getByRole('button', { name: /continue/i }).click()
+
+  // Guest clicks "Join room"
+  await guestPage.getByRole('button', { name: /join room/i }).click()
+
+  // Guest is in waiting room
+  await expect(guestPage.getByText(/waiting for host/i)).toBeVisible()
+
+  // Owner receives admit request and admits guest
+  await owner.admitGuest('Aziz')
+
+  // Both are now in the room!
+  await expect(guestPage.locator('.topbar__room')).toHaveAttribute('data-room-id', code, {
+    timeout: 10000,
+  })
+  await expect(owner.tileByLabel('Aziz')).toBeVisible()
+
+  await ownerContext.close()
+  await guestContext.close()
+})
