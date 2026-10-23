@@ -43,6 +43,7 @@ test('a rejoin against a room that is genuinely gone falls back to the lobby wit
   await room.createRoom()
 
   const session = await page.evaluate(() => localStorage.getItem('meet-me:session'))
+  const name = await page.evaluate(() => localStorage.getItem('meet-me:name'))
 
   // Actually closing the page closes its WebSocket, which is what starts the
   // server's grace-period countdown for this now-empty room. Just reloading
@@ -53,7 +54,13 @@ test('a rejoin against a room that is genuinely gone falls back to the lobby wit
 
   const laterPage = await browser.newPage()
   await laterPage.goto('/lobby')
-  await laterPage.evaluate((value) => localStorage.setItem('meet-me:session', value), session)
+  await laterPage.evaluate(
+    ({ sessionVal, nameVal }) => {
+      localStorage.setItem('meet-me:session', sessionVal)
+      if (nameVal) localStorage.setItem('meet-me:name', nameVal)
+    },
+    { sessionVal: session, nameVal: name },
+  )
   await laterPage.reload()
 
   await expect(laterPage.getByText('Hi, Bekmurod')).toBeVisible({ timeout: 10000 })

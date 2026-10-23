@@ -78,7 +78,13 @@ export default function useRoom(tracksRef) {
   const participantNamesRef = useRef(new Map())
   // Read once on mount, before the connect effect runs, so it's available the instant
   // the socket opens rather than racing a state update.
-  const [initialSession] = useState(loadSession)
+  const [initialSession] = useState(() => {
+    const session = loadSession()
+    if (session?.name && !loadName()) {
+      saveName(session.name)
+    }
+    return session
+  })
   const storedSessionRef = useRef(initialSession)
   const isRejoiningRef = useRef(Boolean(initialSession))
 
