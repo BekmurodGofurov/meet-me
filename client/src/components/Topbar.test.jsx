@@ -22,6 +22,27 @@ describe('Topbar', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Meet Me' })).toBeInTheDocument()
   })
 
+  it('renders brand as a link to home when not in a room', () => {
+    render(
+      <MemoryRouter>
+        <Topbar connectionStatus="connected" roomId={null} />
+      </MemoryRouter>,
+    )
+    const link = screen.getByRole('link', { name: /meet me/i })
+    expect(link).toBeInTheDocument()
+    expect(link).toHaveAttribute('href', '/')
+  })
+
+  it('does not render brand as a link when inside a room to prevent accidental exits', () => {
+    render(
+      <MemoryRouter>
+        <Topbar connectionStatus="connected" roomId="123456" />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('link', { name: /meet me/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Meet Me' })).toBeInTheDocument()
+  })
+
   it('does not render invite button when roomId is null', () => {
     render(
       <MemoryRouter>

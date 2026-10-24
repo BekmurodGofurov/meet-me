@@ -131,7 +131,7 @@ input {
     }
 
     &--moon {
-      color: #6b4de6;
+      color: #8f9293;
     }
   }
 }
@@ -153,12 +153,15 @@ input {
     align-items: center;
     color: inherit;
     text-decoration: none;
+    cursor: pointer;
   }
 
   &__brand {
     display: flex;
     align-items: center;
     gap: 10px;
+    cursor: default;
+    user-select: none;
   }
 
   &__logo {

@@ -75,14 +75,22 @@ export default function Topbar({
     }
   }, [showInviteModal])
 
+  const brandElement = (
+    <div className="topbar__brand">
+      <Logo size={32} className="topbar__logo" />
+      <h1 className="topbar__title">Meet Me</h1>
+    </div>
+  )
+
   return (
     <header className="topbar">
-      <Link to="/" className="topbar__brand-link" style={{ textDecoration: 'none' }}>
-        <div className="topbar__brand">
-          <Logo size={32} className="topbar__logo" />
-          <h1 className="topbar__title">Meet Me</h1>
-        </div>
-      </Link>
+      {roomId ? (
+        brandElement
+      ) : (
+        <Link to="/" className="topbar__brand-link" style={{ textDecoration: 'none' }}>
+          {brandElement}
+        </Link>
+      )}
 
       <div className="topbar__right">
         {admitRequests.length > 0 && (
