@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import StatusDot from './StatusDot'
 import Logo from './Logo'
 import ThemeToggle from './ThemeToggle'
-import { LinkIcon, CloseIcon, CheckIcon } from './icons'
+import { ShareIcon, CopyIcon, CloseIcon, CheckIcon } from './icons'
 
 export default function Topbar({
   connectionStatus,
@@ -121,7 +121,7 @@ export default function Topbar({
               aria-expanded={showInviteModal}
             >
               <span className="topbar__invite-icon" aria-hidden="true">
-                <LinkIcon width={14} height={14} />
+                <ShareIcon width={14} height={14} />
               </span>
               <span>Invite</span>
             </button>
@@ -154,7 +154,10 @@ export default function Topbar({
                             <span>Copied!</span>
                           </>
                         ) : (
-                          'Copy Code'
+                          <>
+                            <CopyIcon width={13} height={13} />
+                            <span>Copy Code</span>
+                          </>
                         )}
                       </button>
                     </div>
@@ -180,7 +183,10 @@ export default function Topbar({
                             <span>Copied!</span>
                           </>
                         ) : (
-                          'Copy Link'
+                          <>
+                            <CopyIcon width={13} height={13} />
+                            <span>Copy Link</span>
+                          </>
                         )}
                       </button>
                     </div>
