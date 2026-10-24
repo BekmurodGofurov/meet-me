@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import Topbar from '../components/Topbar'
+import { CheckIcon, InfoIcon } from '../components/icons'
 
 export default function LicensePage({ connectionStatus }) {
   return (
@@ -49,28 +50,36 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`}
           <h2 className="doc-page__section-title">License Summary</h2>
           <div className="doc-page__grid">
             <div className="doc-page__grid-item is-allowed">
-              <span className="doc-page__check">✓</span>
+              <span className="doc-page__check">
+                <CheckIcon width={15} height={15} />
+              </span>
               <div>
                 <strong>Commercial Use</strong>
                 <p>You can use this software and derivatives for commercial purposes without royalty fees.</p>
               </div>
             </div>
             <div className="doc-page__grid-item is-allowed">
-              <span className="doc-page__check">✓</span>
+              <span className="doc-page__check">
+                <CheckIcon width={15} height={15} />
+              </span>
               <div>
                 <strong>Modification</strong>
                 <p>You may modify, alter, or extend any part of the codebase to suit your needs.</p>
               </div>
             </div>
             <div className="doc-page__grid-item is-allowed">
-              <span className="doc-page__check">✓</span>
+              <span className="doc-page__check">
+                <CheckIcon width={15} height={15} />
+              </span>
               <div>
                 <strong>Distribution</strong>
                 <p>You can share, distribute, or bundle original or modified versions.</p>
               </div>
             </div>
             <div className="doc-page__grid-item is-condition">
-              <span className="doc-page__check">ℹ</span>
+              <span className="doc-page__check">
+                <InfoIcon width={15} height={15} />
+              </span>
               <div>
                 <strong>Notice Requirement</strong>
                 <p>The copyright and permission notice must appear in all copies of the software.</p>

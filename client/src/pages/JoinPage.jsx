@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { LinkIcon } from '../components/icons'
 
 export default function JoinPage({ onResolveInvite, resolvedRoomId, resolveError }) {
   const { token } = useParams()
@@ -36,7 +37,9 @@ export default function JoinPage({ onResolveInvite, resolvedRoomId, resolveError
 
     return (
       <div className="not-found">
-        <div className="not-found__code">🔗</div>
+        <div className="not-found__icon">
+          <LinkIcon width={34} height={34} />
+        </div>
         <h1 className="not-found__title">Unable to join</h1>
         <p className="not-found__sub">{errorMsg}</p>
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>

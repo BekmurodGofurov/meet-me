@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import StatusDot from './StatusDot'
 import Logo from './Logo'
 import ThemeToggle from './ThemeToggle'
+import { LinkIcon, CloseIcon, CheckIcon } from './icons'
 
 export default function Topbar({
   connectionStatus,
@@ -119,7 +120,9 @@ export default function Topbar({
               aria-label="Invite to meeting"
               aria-expanded={showInviteModal}
             >
-              <span className="topbar__invite-icon" aria-hidden="true">🔗</span>
+              <span className="topbar__invite-icon" aria-hidden="true">
+                <LinkIcon width={14} height={14} />
+              </span>
               <span>Invite</span>
             </button>
 
@@ -132,7 +135,7 @@ export default function Topbar({
                     onClick={() => setShowInviteModal(false)}
                     aria-label="Close"
                   >
-                    ✕
+                    <CloseIcon width={14} height={14} />
                   </button>
                 </div>
 
@@ -145,7 +148,14 @@ export default function Topbar({
                         className="is-secondary topbar__invite-copy-btn"
                         onClick={handleCopyCode}
                       >
-                        {codeCopied ? '✓ Copied!' : 'Copy Code'}
+                        {codeCopied ? (
+                          <>
+                            <CheckIcon width={13} height={13} />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          'Copy Code'
+                        )}
                       </button>
                     </div>
                   </div>
@@ -164,7 +174,14 @@ export default function Topbar({
                         className="is-secondary topbar__invite-copy-btn"
                         onClick={handleCopyLink}
                       >
-                        {linkCopied ? '✓ Copied!' : 'Copy Link'}
+                        {linkCopied ? (
+                          <>
+                            <CheckIcon width={13} height={13} />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          'Copy Link'
+                        )}
                       </button>
                     </div>
                   </div>

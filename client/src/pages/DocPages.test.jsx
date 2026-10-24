@@ -44,8 +44,11 @@ describe('LandingPage nav and links', () => {
       </MemoryRouter>,
     )
 
-    const licenseLink = screen.getByRole('link', { name: 'ISC License' })
-    expect(licenseLink).toHaveAttribute('href', '/license')
+    const licenseLinks = screen.getAllByRole('link', { name: /isc license/i })
+    expect(licenseLinks.length).toBeGreaterThanOrEqual(1)
+    licenseLinks.forEach((link) => {
+      expect(link).toHaveAttribute('href', '/license')
+    })
 
     const contributingLink = screen.getByRole('link', { name: 'Contributing' })
     expect(contributingLink).toHaveAttribute('href', '/contributing')

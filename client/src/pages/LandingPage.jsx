@@ -10,6 +10,7 @@ import {
   LightningIcon,
   CodeBranchIcon,
 } from '../components/FeatureIcons'
+import { LockIcon, FileTextIcon } from '../components/icons'
 
 const FEATURES = [
   {
@@ -232,10 +233,22 @@ export default function LandingPage() {
         </p>
 
         <div className="landing__about-badges">
-          <span className="landing__about-pill">⚡ WebSocket Signaling</span>
-          <span className="landing__about-pill">🔒 Peer-to-Peer Mesh</span>
-          <span className="landing__about-pill">🛡️ Waiting Room Gatekeeper</span>
-          <span className="landing__about-pill">📄 ISC License</span>
+          <span className="landing__about-pill">
+            <LightningIcon width={14} height={14} />
+            <span>WebSocket Signaling</span>
+          </span>
+          <span className="landing__about-pill">
+            <LockIcon width={14} height={14} />
+            <span>Peer-to-Peer Mesh</span>
+          </span>
+          <span className="landing__about-pill">
+            <ShieldLockIcon width={14} height={14} />
+            <span>Waiting Room Gatekeeper</span>
+          </span>
+          <Link to="/license" className="landing__about-pill">
+            <FileTextIcon width={14} height={14} />
+            <span>ISC License</span>
+          </Link>
         </div>
 
         <a
