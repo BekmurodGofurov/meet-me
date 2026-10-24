@@ -1,4 +1,5 @@
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import Logo from '../components/Logo'
 import ThemeToggle from '../components/ThemeToggle'
 import {
@@ -76,10 +77,47 @@ const HERO_METRICS = [
 
 export default function LandingPage() {
   const navigate = useNavigate()
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 160)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   return (
     <div className="landing">
-      {/* Nav */}
+      {/* Sticky Top Header on scroll */}
+      <header
+        className={`landing__sticky-nav ${scrolled ? 'is-visible' : ''}`}
+        aria-hidden={!scrolled}
+      >
+        <div className="landing__sticky-nav-inner">
+          <div
+            className="landing__nav-logo"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            style={{ cursor: 'pointer' }}
+          >
+            <Logo size={28} className="landing__logo-img" />
+            <span className="landing__logo-text">Meet Me</span>
+          </div>
+
+          <div className="landing__sticky-nav-right">
+            <ThemeToggle />
+            <button
+              className="landing__btn-primary landing__btn-compact"
+              onClick={() => navigate('/lobby?action=create')}
+            >
+              Start a meeting
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Nav */}
       <nav className="landing__nav">
         <div className="landing__nav-logo">
           <Logo size={36} className="landing__logo-img" />
@@ -88,15 +126,6 @@ export default function LandingPage() {
 
         <div className="landing__nav-right">
           <ThemeToggle />
-
-          <a
-            href="https://github.com/BekmurodGofurov/meet-me"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="landing__nav-github"
-          >
-            GitHub
-          </a>
         </div>
       </nav>
 
@@ -226,9 +255,9 @@ export default function LandingPage() {
           <span>Meet Me</span>
         </div>
         <div className="landing__footer-links">
+          <Link to="/license">ISC License</Link>
+          <Link to="/contributing">Contributing</Link>
           <a href="https://github.com/BekmurodGofurov/meet-me" target="_blank" rel="noopener noreferrer">GitHub</a>
-          <a href="https://github.com/BekmurodGofurov/meet-me/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">ISC License</a>
-          <a href="https://github.com/BekmurodGofurov/meet-me/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>
         </div>
         <div className="landing__footer-right">
           © 2026 Bekmurod Gofurov

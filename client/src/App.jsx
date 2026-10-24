@@ -9,6 +9,8 @@ import AdmitPanel from './components/AdmitPanel'
 import LandingPage from './pages/LandingPage'
 import NotFoundPage from './pages/NotFoundPage'
 import JoinPage from './pages/JoinPage'
+import LicensePage from './pages/LicensePage'
+import ContributingPage from './pages/ContributingPage'
 import useLocalMedia from './hooks/useLocalMedia'
 import useRoom from './hooks/useRoom'
 
@@ -172,6 +174,16 @@ export default function App() {
             />
           </div>
         }
+      />
+
+      {/* Open Source License & Contributing pages */}
+      <Route
+        path="/license"
+        element={<LicensePage connectionStatus={room.connectionStatus} />}
+      />
+      <Route
+        path="/contributing"
+        element={<ContributingPage connectionStatus={room.connectionStatus} />}
       />
 
       {/* 404 Not Found */}
