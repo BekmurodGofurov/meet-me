@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ScreenShareIcon } from './icons'
 
 export default function VideoTile({
@@ -12,6 +12,10 @@ export default function VideoTile({
   isScreen = false,
 }) {
   const videoRef = useRef(null)
+  // Browsers block unmuted autoplay until the user has interacted with the
+  // page - e.g. right after a reload restores the call. Instead of silently
+  // staying quiet, offer a button (a click is the interaction they need).
+  const [soundBlocked, setSoundBlocked] = useState(false)
 
   useEffect(() => {
     const video = videoRef.current
@@ -22,16 +26,27 @@ export default function VideoTile({
         video.srcObject = stream
       }
       try {
-        video.play?.()?.catch?.(() => {
-          // Handled gracefully if browser autoplay policy delays playback
-        })
+        video.play?.()?.then?.(
+          () => setSoundBlocked(false),
+          (err) => {
+            if (err?.name === 'NotAllowedError' && !muted) setSoundBlocked(true)
+          },
+        )
       } catch {
         // Ignore test environments or unsupported play()
       }
     } else {
       video.srcObject = null
     }
-  }, [stream, showVideo])
+  }, [stream, showVideo, muted])
+
+  const enableSound = (event) => {
+    event.stopPropagation()
+    videoRef.current
+      ?.play?.()
+      ?.then?.(() => setSoundBlocked(false))
+      ?.catch?.(() => {})
+  }
 
   const initial = label?.trim()?.[0]?.toUpperCase() ?? '?'
   const clickable = Boolean(onClick)
@@ -67,6 +82,11 @@ export default function VideoTile({
               <div className="video-tile__avatar">{initial}</div>
             )}
           </div>
+        )}
+        {soundBlocked && (
+          <button type="button" className="video-tile__enable-sound" onClick={enableSound}>
+            Click to enable sound
+          </button>
         )}
       </div>
       <figcaption>{label}</figcaption>

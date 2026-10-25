@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { installMediaMocks } from '../test/media-mocks'
-import useLocalMedia from './useLocalMedia'
+import useLocalMedia, { AUDIO_CONSTRAINTS, VIDEO_CONSTRAINTS } from './useLocalMedia'
 
 function setup() {
   const onTrackChangedRef = { current: vi.fn() }
@@ -31,9 +31,35 @@ describe('useLocalMedia', () => {
       await result.current.toggleCamera()
     })
 
-    expect(getUserMedia).toHaveBeenCalledWith({ video: true })
+    expect(getUserMedia).toHaveBeenCalledWith({ video: VIDEO_CONSTRAINTS })
     expect(result.current.cameraOn).toBe(true)
     expect(result.current.micOn).toBe(false)
+  })
+
+  it('asks for 720p instead of the browser default resolution', () => {
+    expect(VIDEO_CONSTRAINTS.width).toEqual({ ideal: 1280 })
+    expect(VIDEO_CONSTRAINTS.height).toEqual({ ideal: 720 })
+  })
+
+  it('marks the camera track as motion content for the encoder', async () => {
+    const { result } = setup()
+
+    await act(async () => {
+      await result.current.toggleCamera()
+    })
+
+    expect(result.current.tracksRef.current.video.contentHint).toBe('motion')
+  })
+
+  it('a double click while the camera is starting does not open a second capture', async () => {
+    const { result } = setup()
+
+    await act(async () => {
+      await Promise.all([result.current.toggleCamera(), result.current.toggleCamera()])
+    })
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1)
+    expect(result.current.cameraOn).toBe(true)
   })
 
   it('toggling the mic requests only audio, not video', async () => {
@@ -43,7 +69,7 @@ describe('useLocalMedia', () => {
       await result.current.toggleMic()
     })
 
-    expect(getUserMedia).toHaveBeenCalledWith({ audio: true })
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: AUDIO_CONSTRAINTS })
     expect(result.current.micOn).toBe(true)
     expect(result.current.cameraOn).toBe(false)
   })
@@ -132,7 +158,7 @@ describe('useLocalMedia', () => {
     expect(result.current.mediaError).toMatch(/microphone/i)
   })
 
-  it('falls back to ideal constraints if initial video constraint rejects with OverconstrainedError', async () => {
+  it('falls back to the browser default if the HD constraints reject with OverconstrainedError', async () => {
     const constraintErr = new Error('Invalid constraint')
     constraintErr.name = 'OverconstrainedError'
     getUserMedia.mockRejectedValueOnce(constraintErr)
@@ -144,13 +170,8 @@ describe('useLocalMedia', () => {
     })
 
     expect(getUserMedia).toHaveBeenCalledTimes(2)
-    expect(getUserMedia).toHaveBeenNthCalledWith(1, { video: true })
-    expect(getUserMedia).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        video: expect.objectContaining({ facingMode: 'user' }),
-      }),
-    )
+    expect(getUserMedia).toHaveBeenNthCalledWith(1, { video: VIDEO_CONSTRAINTS })
+    expect(getUserMedia).toHaveBeenNthCalledWith(2, { video: true })
     expect(result.current.cameraOn).toBe(true)
     expect(result.current.mediaError).toBe('')
   })
