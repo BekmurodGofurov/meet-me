@@ -1,8 +1,19 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import Topbar from '../components/Topbar'
 import { CheckIcon, InfoIcon } from '../components/icons'
 
 export default function LicensePage({ connectionStatus }) {
+  useEffect(() => {
+    try {
+      window.scrollTo?.(0, 0)
+      if (document?.documentElement) document.documentElement.scrollTop = 0
+      if (document?.body) document.body.scrollTop = 0
+    } catch {
+      // Ignore
+    }
+  }, [])
+
   return (
     <div className="doc-page">
       <Topbar connectionStatus={connectionStatus} roomId={null} />

@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Chat from './Chat'
 import MediaControls from './MediaControls'
 import VideoTile from './VideoTile'
+import { CloseIcon } from './icons'
+import { ChatBubbleIcon } from './FeatureIcons'
 
 export default function Room({
   me,
@@ -17,6 +19,71 @@ export default function Room({
   onSendMessage,
 }) {
   const [manualPinnedId, setManualPinnedId] = useState(null)
+  const [mobileChatOpen, setMobileChatOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [activeToast, setActiveToast] = useState(null)
+  const lastMsgCountRef = useRef(messages.length)
+  const toastTimeoutRef = useRef(null)
+
+  useEffect(() => {
+    if (messages.length > lastMsgCountRef.current) {
+      const newMsgs = messages.slice(lastMsgCountRef.current)
+      const incoming = newMsgs.filter((m) => m.kind === 'chat' && m.from !== me?.clientId)
+      if (incoming.length > 0) {
+        if (!mobileChatOpen) {
+          setUnreadCount((prev) => prev + incoming.length)
+          const latest = incoming[incoming.length - 1]
+          setActiveToast({
+            id: latest.id,
+            fromName: latest.fromName || 'Someone',
+            text: latest.text,
+          })
+
+          if (toastTimeoutRef.current) {
+            clearTimeout(toastTimeoutRef.current)
+          }
+          toastTimeoutRef.current = setTimeout(() => {
+            setActiveToast(null)
+          }, 4500)
+        }
+      }
+    }
+    lastMsgCountRef.current = messages.length
+  }, [messages, mobileChatOpen, me?.clientId])
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleToggleChat = () => {
+    setMobileChatOpen((prev) => {
+      const next = !prev
+      if (next) {
+        setUnreadCount(0)
+        setActiveToast(null)
+      }
+      return next
+    })
+  }
+
+  const handleCloseChat = () => {
+    setMobileChatOpen(false)
+  }
+
+  const handleOpenChatFromToast = () => {
+    setActiveToast(null)
+    setMobileChatOpen(true)
+    setUnreadCount(0)
+  }
+
+  const handleDismissToast = (e) => {
+    e.stopPropagation()
+    setActiveToast(null)
+  }
 
   const screenTiles = []
   if (media.screenOn && localScreenStream) {
@@ -82,6 +149,35 @@ export default function Room({
 
   return (
     <div className="room">
+      {/* Heads-up Toast Notification when someone sends a message while chat is closed */}
+      {activeToast && !mobileChatOpen && (
+        <aside
+          className="chat-toast"
+          role="status"
+          aria-live="polite"
+          onClick={handleOpenChatFromToast}
+        >
+          <div className="chat-toast__icon" aria-hidden="true">
+            <ChatBubbleIcon width={16} height={16} />
+          </div>
+          <div className="chat-toast__content">
+            <div className="chat-toast__header">
+              <span className="chat-toast__author">{activeToast.fromName}</span>
+              <span className="chat-toast__hint">Tap to reply</span>
+            </div>
+            <span className="chat-toast__text">{activeToast.text}</span>
+          </div>
+          <button
+            type="button"
+            className="chat-toast__close"
+            onClick={handleDismissToast}
+            aria-label="Dismiss message notification"
+          >
+            <CloseIcon width={14} height={14} />
+          </button>
+        </aside>
+      )}
+
       <div className="room__layout">
         {pinnedTile && otherTiles.length > 0 && (
           <div className="stage-sidebar">
@@ -141,6 +237,9 @@ export default function Room({
                 onToggleMic={media.toggleMic}
                 onToggleScreenShare={media.toggleScreenShare}
                 onLeave={onLeave}
+                onToggleChat={handleToggleChat}
+                chatOpen={mobileChatOpen}
+                unreadCount={unreadCount}
               />
             </div>
           </div>
@@ -148,7 +247,31 @@ export default function Room({
           {media.mediaError && <p className="media-error">{media.mediaError}</p>}
         </div>
 
-        <Chat messages={messages} myId={me?.clientId} onSend={onSendMessage} />
+        {/* Responsive Chat: Sidebar on desktop, slide-up sheet on mobile */}
+        <div className={`room__chat-wrapper ${mobileChatOpen ? 'is-open' : ''}`}>
+          <div
+            className="room__chat-backdrop"
+            onClick={handleCloseChat}
+            aria-hidden="true"
+          />
+          <div className="room__chat-panel">
+            <div className="room__chat-header">
+              <div className="room__chat-header-title">
+                <ChatBubbleIcon width={17} height={17} />
+                <span>In-Call Messages</span>
+              </div>
+              <button
+                type="button"
+                className="room__chat-close-btn"
+                onClick={handleCloseChat}
+                aria-label="Close chat"
+              >
+                <CloseIcon width={16} height={16} />
+              </button>
+            </div>
+            <Chat messages={messages} myId={me?.clientId} onSend={onSendMessage} />
+          </div>
+        </div>
       </div>
     </div>
   )
