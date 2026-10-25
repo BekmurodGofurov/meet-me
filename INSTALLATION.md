@@ -38,11 +38,13 @@ Key environment variables:
 |---|---|---|
 | `PORT` | `8080` | Internal port the Node.js signaling service listens on |
 | `BACKEND_PORT` | `8090` | Host port mapped by Docker Compose (`127.0.0.1:8090:8080`) |
-| `SECRET_KEY` | `meet-me-secret-key-change-in-production` | Secret key for WebSocket signaling authorization |
+| `ALLOWED_ORIGINS` | *(empty = any)* | Comma-separated web origins allowed to open a WebSocket. Set it in production |
+| `TRUST_PROXY` | *(off)* | `1` behind nginx, so per-IP rate limits see the real client address |
+| `STUN_URLS` | `stun:stun.l.google.com:19302` | Comma-separated STUN servers sent to clients |
+| `TURN_URLS` / `TURN_SECRET` | *(off)* | Your own coturn server (`use-auth-secret`); clients get short-lived credentials |
 | `ROOM_GRACE_MS` | `10000` | Room retention grace period (ms) when all peers leave |
 | `VITE_WS_URL` | `/ws` | Signaling WebSocket URL (proxied by Vite in dev) |
 | `VITE_API_URL` | `http://localhost:8080` | Backend API base URL |
-| `VITE_SECRET_KEY` | `meet-me-secret-key-change-in-production` | Secret key sent by client during connection |
 
 ---
 
@@ -154,4 +156,4 @@ npm --prefix e2e test
 
 - **Port 8080 already in use:** Change `PORT` in your `.env` file or terminate the process using `lsof -i :8080`.
 - **Camera/Mic not working in browser:** Ensure you granted permissions in browser site settings. On non-localhost URLs, HTTPS is required by browser security policies.
-- **WebSocket unauthorized error:** Ensure `VITE_SECRET_KEY` in `client/.env` matches `SECRET_KEY` in `backend/.env`.
+- **WebSocket connection refused (HTTP 401) in production:** the page's origin is not in `ALLOWED_ORIGINS`. Add it (e.g. `https://meet-me.bekmurod.uz`) and restart the backend.

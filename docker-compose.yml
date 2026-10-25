@@ -4,9 +4,21 @@ services:
     restart: unless-stopped
     environment:
       - PORT=8080
-      - SECRET_KEY=${SECRET_KEY:-meet-me-secret-key-change-in-production}
       - ROOM_GRACE_MS=${ROOM_GRACE_MS:-10000}
+      # Only pages from this origin may open a signaling socket.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://meet-me.bekmurod.uz}
+      # nginx sets X-Forwarded-For; needed for the per-IP rate limits.
+      - TRUST_PROXY=1
+      - STUN_URLS=${STUN_URLS:-}
+      # Optional: your own coturn server (use-auth-secret mode).
+      - TURN_URLS=${TURN_URLS:-}
+      - TURN_SECRET=${TURN_SECRET:-}
+      - TURN_TTL_SECONDS=${TURN_TTL_SECONDS:-3600}
     ports:
       # Bound to loopback only - nginx on the same host proxies to it, so it
       # never needs to be reachable directly from outside this server.
       - "127.0.0.1:${BACKEND_PORT:-8090}:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 256M

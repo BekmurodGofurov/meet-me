@@ -44,10 +44,30 @@ Responds with `room-created` (see below).
 
 **Payload:**
 ```json
-{ "type": "room-created", "roomId": "X7K2P9", "clientId": "c-1a2b3c", "name": "Bekmurod" }
+{
+  "type": "room-created",
+  "roomId": "x7k2p9",
+  "clientId": "c-1a2b3c",
+  "name": "Bekmurod",
+  "isOwner": true,
+  "ownerId": "c-1a2b3c",
+  "rejoinToken": "5b0c…",
+  "iceServers": [{ "urls": ["stun:stun.l.google.com:19302"] }]
+}
 ```
 `name` is echoed back as the server actually stored it (after trimming and
 capping), so the client displays the same value everyone else sees.
+
+`roomId` is 6 characters from `a-z0-9` (~2.2 billion codes), never reused
+while a room with that code still exists.
+
+`rejoinToken` is single-use proof that this browser is already a member.
+The client stores it with the session so a page reload can come straight
+back in with `join-room` (see below) instead of asking the host again.
+
+`iceServers` goes straight into `new RTCPeerConnection({ iceServers })`.
+If the server has a TURN server configured, it includes short-lived TURN
+credentials made for this client.
 
 **Browser behavior:** Displays the `roomId` to the user so they can
 share it, and stores its own `clientId` for use in all future messages
@@ -55,23 +75,31 @@ share it, and stores its own `clientId` for use in all future messages
 
 ---
 
-## 3. `join-room`
+## 3. `join-room` (rejoin)
 
 **Direction:** Browser → Server
 
-**When:** User types in a room code and clicks "Join Room".
+**When:** The page reloads (or the socket reconnects) while the user was in
+a room. A first-time join never uses this - it goes through `join-request`.
 
 **Payload:**
 ```json
-{ "type": "join-room", "roomId": "X7K2P9", "name": "Aziz" }
+{ "type": "join-room", "roomId": "x7k2p9", "name": "Aziz", "rejoinToken": "5b0c…" }
 ```
 
-**Server behavior:** Looks up `roomId` in the Map. If it doesn't exist,
-or already has 6 members, this fails (see "Open question" below).
-Otherwise: generates a new `clientId` for this connection, adds it to
-the room's member Map, then:
-- Sends `existing-peers` back to this new client only.
+**Server behavior:** Accepted only if `rejoinToken` was issued for this
+`roomId` and hasn't been used yet. Otherwise:
+- unknown room → `{ "type": "error", "message": "Room does not exist" }`
+- missing/wrong token → `{ "type": "error", "message": "Ask the host to let you in" }`
+- full → `{ "type": "error", "message": "Room is full" }`
+
+On success the old token is spent, a new one is issued, and the server:
+- Sends `existing-peers` back to this client only.
 - Sends `peer-joined` to every client already in the room.
+
+If the room was empty (everyone reloaded within the grace period), the
+first person back becomes its owner, so join requests always have someone
+to go to.
 
 ---
 
@@ -92,9 +120,13 @@ path — whoever just got added to the room)
   "peers": [
     { "clientId": "c-1a2b3c", "name": "Bekmurod" },
     { "clientId": "c-4d5e6f", "name": "Kamila" }
-  ]
+  ],
+  "ownerId": "c-1a2b3c",
+  "rejoinToken": "9e1f…",
+  "iceServers": [{ "urls": ["stun:stun.l.google.com:19302"] }]
 }
 ```
+`ownerId`, `rejoinToken` and `iceServers` mean the same as in `room-created`.
 `clientId` and `name` here are the new client's own (same purpose as in
 `room-created` — for `join-room` this is where they first learn them,
 since `join-room` itself doesn't return them directly). `roomId` is echoed
@@ -171,8 +203,10 @@ browser. The server does not read or modify `payload` — pure relay.
 }
 ```
 
-**Server behavior:** Looks up `targetId` in the current room's member
-Map, forwards the entire message to that client's connection only.
+**Server behavior:** Looks up `targetId` in the sender's current room and
+forwards `{ type, targetId, senderId, payload }` to that client only - any
+other fields are dropped, `senderId` is always set by the server, and a
+`payload` that isn't a JSON object is dropped.
 
 **Browser behavior:** Feeds `payload` into the matching
 `RTCPeerConnection` (matched via `senderId`), which drives the WebRTC
@@ -191,9 +225,24 @@ the existing members learn each other's current state).
 
 **Payload:**
 ```json
-{ "type": "media-state", "from": "c-9f8e7d", "cameraOn": false, "micOn": true }
+{
+  "type": "media-state",
+  "from": "c-9f8e7d",
+  "cameraOn": false,
+  "micOn": true,
+  "screenSharing": true,
+  "cameraStreamId": "a1b2…",
+  "screenStreamId": "c3d4…"
+}
 ```
 `from` is stamped by the server, like `chat-message`.
+
+`cameraStreamId` / `screenStreamId` are the ids of the MediaStreams the
+sender attached to its transceivers (camera + mic share one, screen has its
+own). Stream ids travel through SDP (`a=msid`) unchanged, so the receiver
+matches `event.streams[0].id` in `ontrack` against them to know which tile a
+track belongs to. (Track ids are *not* preserved between browsers, which is
+why they can't be used for this.) Strings over 64 characters become `null`.
 
 **Why this exists:** turning a camera off stops the media, but the
 receiving `<video>` element keeps painting the last frame it got, so the
@@ -238,7 +287,8 @@ room, not one-to-one. `from` and `fromName` are both filled in by the
 server from the sending connection, never trusted from the client.
 
 **Server behavior:** Looks up the sender's room, sends this message to
-every other member's connection.
+every other member's connection. `text` must be a string; it is trimmed and
+capped at 500 characters, and an empty or non-string `text` is dropped.
 
 **Browser behavior:** Appends the message to the visible chat log.
 
@@ -249,6 +299,8 @@ every other member's connection.
 **Direction:** Browser → Server, then Server → Browser
 
 **When:** Room member requests a shareable invite link (UUID v4 token).
+A room has one invite token; asking again returns the same one. It stops
+working when the room is deleted.
 
 **Browser payload:**
 ```json
@@ -302,6 +354,12 @@ If invalid or expired, returns `{ "type": "error", "message": "Invalid or expire
 { "type": "admit-request", "requestId": "req-uuid-1234", "name": "Aziz", "clientId": "c-9f8e7d" }
 ```
 
+A connection has at most one open request: a second `join-request`
+cancels the first (the owner gets `admit-request-cancelled` for it).
+Errors: `Room does not exist`, `Room is full`, `The host is not in the room
+right now`, and `Too many attempts. Please wait a minute and try again.`
+(after 20 failed lookups from one IP within a minute).
+
 ---
 
 ## 14. `admit-response`
@@ -315,7 +373,8 @@ If invalid or expired, returns `{ "type": "error", "message": "Invalid or expire
 { "type": "admit-response", "requestId": "req-uuid-1234", "admitted": true }
 ```
 
-**Server behavior:**
+**Server behavior:** Ignored unless the sender is the room's current
+owner and the guest is still connected.
 - If `admitted: true`: Guest receives `existing-peers` and room members receive `peer-joined`.
 - If `admitted: false`: Guest receives `{ "type": "join-rejected", "reason": "The host declined your request" }`.
 
@@ -352,15 +411,14 @@ If invalid or expired, returns `{ "type": "error", "message": "Invalid or expire
 
 ---
 
-## Open questions (things not decided yet — revisit before/while coding)
+## Server limits
 
-- **Room full / room doesn't exist:** what does the server send back to
-  someone who tries to `join-room` with a bad or full room code? Not
-  needed for Day 1 (a happy-path join is enough to start), but needs an
-  answer before Day 3-4 testing with real users. Candidate: a
-  `join-error` message with a `reason` field.
-- **Where does a `clientId` come from, exactly?** Decided: server
-  generates it per connection (not per message), the moment a
-  WebSocket connection opens — before `create-room`/`join-room` even
-  arrives. Needs to be implemented as step 1 of the server's
-  `connection` handler.
+- Messages over 64 KB close the connection (code 1009).
+- Each connection may send a burst of 200 messages, refilled at 50/second;
+  anything beyond that is dropped.
+- The server pings every 30 s; a connection that misses a ping is closed,
+  which runs the normal `peer-left` cleanup.
+- If `ALLOWED_ORIGINS` is set, a WebSocket from any other origin is refused
+  during the handshake (HTTP 401).
+- Room full / room doesn't exist / wrong rejoin token are all answered with
+  `{ "type": "error", "message": "..." }`.
