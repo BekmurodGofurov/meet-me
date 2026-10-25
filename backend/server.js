@@ -56,17 +56,39 @@ const server = useHttps
   : createHttpServer(pageHandler);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
-const secretKey = process.env.SECRET_KEY || undefined;
 const roomGraceMs = process.env.ROOM_GRACE_MS ? Number(process.env.ROOM_GRACE_MS) : undefined;
+const list = (value) => (value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+
+// Comma-separated, e.g. "https://meet-me.bekmurod.uz". Empty = any origin
+// (fine for local dev; set it in production).
+const allowedOrigins = list(process.env.ALLOWED_ORIGINS);
+
+// Behind nginx every connection comes from 127.0.0.1, so the per-IP limits
+// need the X-Forwarded-For header nginx adds. Only trust it when a proxy
+// you control sets it.
+const trustProxy = process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true';
+
+const stunUrls = process.env.STUN_URLS ? list(process.env.STUN_URLS) : undefined;
+const turnUrls = list(process.env.TURN_URLS);
+const turn =
+  turnUrls.length > 0 && process.env.TURN_SECRET
+    ? {
+        urls: turnUrls,
+        secret: process.env.TURN_SECRET,
+        ttlSeconds: process.env.TURN_TTL_SECONDS ? Number(process.env.TURN_TTL_SECONDS) : 3600,
+      }
+    : null;
 
 createSignalingServer(server, {
   ...(roomGraceMs ? { roomGraceMs } : {}),
-  ...(secretKey ? { secretKey } : {}),
+  ...(stunUrls ? { stunUrls } : {}),
+  allowedOrigins,
+  trustProxy,
+  turn,
 });
 
 server.listen(PORT, () => {
   console.log(`Server is running on ${useHttps ? 'wss' : 'ws'}://localhost:${PORT}`);
-  if (secretKey) {
-    console.log('Secret key authentication is enabled');
-  }
+  if (allowedOrigins.length > 0) console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+  if (turn) console.log(`TURN enabled: ${turn.urls.join(', ')}`);
 });
