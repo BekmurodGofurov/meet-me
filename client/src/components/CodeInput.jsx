@@ -59,6 +59,9 @@ export default function CodeInput({ chars, onChange, onComplete }) {
           value={char}
           inputMode="text"
           autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck="false"
           maxLength={1}
           aria-label={`Room code character ${index + 1}`}
           onChange={(e) => handleChange(index, e.target.value)}

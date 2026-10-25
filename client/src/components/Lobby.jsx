@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import CodeInput from './CodeInput'
 import PreJoin from './PreJoin'
 import { loadName, saveName } from '../session'
@@ -22,6 +22,16 @@ export default function Lobby({
   initialName = '',
   media,
 }) {
+  useEffect(() => {
+    try {
+      window.scrollTo?.(0, 0)
+      if (document?.documentElement) document.documentElement.scrollTop = 0
+      if (document?.body) document.body.scrollTop = 0
+    } catch {
+      // Ignore
+    }
+  }, [])
+
   const searchParams = getSearchParams()
   const actionParam = searchParams.get('action') // 'create' | 'join' | null
   const roomIdParam = searchParams.get('roomId') // 'abc123' from invite link

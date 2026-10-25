@@ -81,6 +81,16 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
+    try {
+      window.scrollTo?.(0, 0)
+      if (document?.documentElement) document.documentElement.scrollTop = 0
+      if (document?.body) document.body.scrollTop = 0
+    } catch {
+      // Ignore
+    }
+  }, [])
+
+  useEffect(() => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 160)
     }

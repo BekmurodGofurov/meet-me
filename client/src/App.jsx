@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Routes, Route, useNavigate, Navigate } from 'react-router-dom'
+import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import './App.scss'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
@@ -19,6 +19,18 @@ export default function App() {
   const media = useLocalMedia(publishTrackRef)
   const room = useRoom(media.tracksRef)
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Scroll to the very top whenever the route/page changes
+  useEffect(() => {
+    try {
+      window.scrollTo?.(0, 0)
+      if (document?.documentElement) document.documentElement.scrollTop = 0
+      if (document?.body) document.body.scrollTop = 0
+    } catch {
+      // Ignore in environments where window/document scrolling is unsupported
+    }
+  }, [location.pathname])
 
   const [admitPanelClosed, setAdmitPanelClosed] = useState(false)
 

@@ -127,72 +127,79 @@ export default function Topbar({
             </button>
 
             {showInviteModal && (
-              <div className="topbar__invite-modal" role="dialog" aria-label="Invite to meeting">
-                <div className="topbar__invite-modal-header">
-                  <span className="topbar__invite-modal-title">Invite to Meeting</span>
-                  <button
-                    className="topbar__invite-modal-close"
-                    onClick={() => setShowInviteModal(false)}
-                    aria-label="Close"
-                  >
-                    <CloseIcon width={14} height={14} />
-                  </button>
-                </div>
-
-                <div className="topbar__invite-modal-body">
-                  <div className="topbar__invite-section">
-                    <label className="topbar__invite-label">Room Code</label>
-                    <div className="topbar__invite-row">
-                      <div className="topbar__invite-code">{roomId}</div>
-                      <button
-                        className="is-secondary topbar__invite-copy-btn"
-                        onClick={handleCopyCode}
-                      >
-                        {codeCopied ? (
-                          <>
-                            <CheckIcon width={13} height={13} />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <CopyIcon width={13} height={13} />
-                            <span>Copy Code</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+              <>
+                <div
+                  className="topbar__invite-backdrop"
+                  onClick={() => setShowInviteModal(false)}
+                  aria-hidden="true"
+                />
+                <div className="topbar__invite-modal" role="dialog" aria-label="Invite to meeting">
+                  <div className="topbar__invite-modal-header">
+                    <span className="topbar__invite-modal-title">Invite to Meeting</span>
+                    <button
+                      className="topbar__invite-modal-close"
+                      onClick={() => setShowInviteModal(false)}
+                      aria-label="Close"
+                    >
+                      <CloseIcon width={14} height={14} />
+                    </button>
                   </div>
 
-                  <div className="topbar__invite-section">
-                    <label className="topbar__invite-label">Share Link</label>
-                    <div className="topbar__invite-row">
-                      <input
-                        type="text"
-                        readOnly
-                        value={shareUrl}
-                        className="topbar__invite-input"
-                        onClick={(e) => e.target.select()}
-                      />
-                      <button
-                        className="is-secondary topbar__invite-copy-btn"
-                        onClick={handleCopyLink}
-                      >
-                        {linkCopied ? (
-                          <>
-                            <CheckIcon width={13} height={13} />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <CopyIcon width={13} height={13} />
-                            <span>Copy Link</span>
-                          </>
-                        )}
-                      </button>
+                  <div className="topbar__invite-modal-body">
+                    <div className="topbar__invite-section">
+                      <label className="topbar__invite-label">Room Code</label>
+                      <div className="topbar__invite-row">
+                        <div className="topbar__invite-code">{roomId}</div>
+                        <button
+                          className="is-secondary topbar__invite-copy-btn"
+                          onClick={handleCopyCode}
+                        >
+                          {codeCopied ? (
+                            <>
+                              <CheckIcon width={13} height={13} />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <CopyIcon width={13} height={13} />
+                              <span>Copy Code</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="topbar__invite-section">
+                      <label className="topbar__invite-label">Share Link</label>
+                      <div className="topbar__invite-row">
+                        <input
+                          type="text"
+                          readOnly
+                          value={shareUrl}
+                          className="topbar__invite-input"
+                          onClick={(e) => e.target.select()}
+                        />
+                        <button
+                          className="is-secondary topbar__invite-copy-btn"
+                          onClick={handleCopyLink}
+                        >
+                          {linkCopied ? (
+                            <>
+                              <CheckIcon width={13} height={13} />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <CopyIcon width={13} height={13} />
+                              <span>Copy Link</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}

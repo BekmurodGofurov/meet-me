@@ -53,6 +53,12 @@
   --controls-btn-neutral-border: rgba(255, 255, 255, 0.25);
   --controls-btn-neutral-text: #ffffff;
 
+  // Safe Area Insets (iOS Safari, Dynamic Island, Home indicator)
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
   font: 16px/150% var(--sans);
   color: var(--text);
   background-color: var(--bg);
@@ -119,11 +125,17 @@
   box-sizing: border-box;
 }
 
+html, body {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background-color: var(--bg);
   color: var(--text);
   transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root {
