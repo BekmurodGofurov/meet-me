@@ -130,6 +130,50 @@ docker compose logs -f backend
 docker compose down
 ```
 
+### TURN server (required for phones and strict networks)
+
+STUN alone only works when both sides can reach each other directly. Phones on
+mobile data (carrier NAT) usually cannot, so without TURN they get no video or
+audio at all. Install coturn on the server:
+
+```bash
+sudo apt install -y coturn
+openssl rand -hex 32   # your TURN secret
+```
+
+`/etc/turnserver.conf` (replace `SECRET` and `PUBLIC_IP`):
+
+```
+listen-port=3478
+fingerprint
+use-auth-secret
+static-auth-secret=SECRET
+realm=meet-me.bekmurod.uz
+external-ip=PUBLIC_IP
+min-port=49160
+max-port=49200
+no-multicast-peers
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+```
+
+Set `TURNSERVER_ENABLED=1` in `/etc/default/coturn`, then
+`sudo systemctl enable --now coturn`. In the cloud firewall open UDP+TCP 3478
+and UDP 49160-49200.
+
+Give the backend the same secret in the `.env` next to `docker-compose.yml`,
+then `docker compose up -d`:
+
+```
+TURN_URLS=turn:meet-me.bekmurod.uz:3478,turn:meet-me.bekmurod.uz:3478?transport=tcp
+TURN_SECRET=SECRET
+```
+
+To verify, open `chrome://webrtc-internals` during a call: a `typ relay`
+candidate means TURN works.
+
 ---
 
 ## 7. Running Tests
