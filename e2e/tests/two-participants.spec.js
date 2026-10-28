@@ -28,11 +28,14 @@ test('two people can join the same room, chat, and see join/leave notices', asyn
   await expect(memberPage.tileByLabel('Aziz (you)')).toBeVisible()
   await expect(memberPage.tileByLabel('Bekmurod')).toBeVisible()
 
-  // The owner sees a join notice for the member.
+  // The owner sees a join notice for the member (it lives in the chat panel,
+  // which is closed until opened).
+  await ownerPage.openChat()
   await expect(ownerPage.systemNotice('Aziz joined the room')).toBeVisible()
 
   // Chat travels both ways with the right names attached.
   await ownerPage.sendChat('hello from Bekmurod')
+  await memberPage.openChat()
   await expect(memberPage.chatBubble('hello from Bekmurod')).toBeVisible()
   await expect(memberPage.chatBubble('Bekmurod')).toBeVisible()
 

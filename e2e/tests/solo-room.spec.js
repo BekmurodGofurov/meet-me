@@ -55,3 +55,19 @@ test('joining a room that does not exist shows an error', async ({ page }) => {
 
   await expect(page.locator('.lobby__error')).toHaveText(/does not exist/i)
 })
+
+test('chat is closed by default and the chat button toggles it open and closed', async ({ page }) => {
+  const room = new RoomPage(page)
+  await room.open()
+  await room.enterName('Bekmurod')
+  await room.createRoom()
+
+  const input = page.getByPlaceholder(/type a message/i)
+  await expect(input).toBeHidden()
+
+  await page.getByRole('button', { name: /^open chat$/i }).click()
+  await expect(input).toBeVisible()
+
+  await page.getByRole('button', { name: /^close chat$/i }).first().click()
+  await expect(input).toBeHidden()
+})

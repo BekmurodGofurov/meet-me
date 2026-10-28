@@ -19,7 +19,7 @@ export default function Room({
   onSendMessage,
 }) {
   const [manualPinnedId, setManualPinnedId] = useState(null)
-  const [mobileChatOpen, setMobileChatOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [activeToast, setActiveToast] = useState(null)
   const lastMsgCountRef = useRef(messages.length)
@@ -30,7 +30,7 @@ export default function Room({
       const newMsgs = messages.slice(lastMsgCountRef.current)
       const incoming = newMsgs.filter((m) => m.kind === 'chat' && m.from !== me?.clientId)
       if (incoming.length > 0) {
-        if (!mobileChatOpen) {
+        if (!chatOpen) {
           setUnreadCount((prev) => prev + incoming.length)
           const latest = incoming[incoming.length - 1]
           setActiveToast({
@@ -49,7 +49,7 @@ export default function Room({
       }
     }
     lastMsgCountRef.current = messages.length
-  }, [messages, mobileChatOpen, me?.clientId])
+  }, [messages, chatOpen, me?.clientId])
 
   useEffect(() => {
     return () => {
@@ -60,7 +60,7 @@ export default function Room({
   }, [])
 
   const handleToggleChat = () => {
-    setMobileChatOpen((prev) => {
+    setChatOpen((prev) => {
       const next = !prev
       if (next) {
         setUnreadCount(0)
@@ -71,12 +71,12 @@ export default function Room({
   }
 
   const handleCloseChat = () => {
-    setMobileChatOpen(false)
+    setChatOpen(false)
   }
 
   const handleOpenChatFromToast = () => {
     setActiveToast(null)
-    setMobileChatOpen(true)
+    setChatOpen(true)
     setUnreadCount(0)
   }
 
@@ -150,7 +150,7 @@ export default function Room({
   return (
     <div className="room">
       {/* Heads-up Toast Notification when someone sends a message while chat is closed */}
-      {activeToast && !mobileChatOpen && (
+      {activeToast && !chatOpen && (
         <aside
           className="chat-toast"
           role="status"
@@ -238,7 +238,7 @@ export default function Room({
                 onToggleScreenShare={media.toggleScreenShare}
                 onLeave={onLeave}
                 onToggleChat={handleToggleChat}
-                chatOpen={mobileChatOpen}
+                chatOpen={chatOpen}
                 unreadCount={unreadCount}
               />
             </div>
@@ -248,7 +248,7 @@ export default function Room({
         </div>
 
         {/* Responsive Chat: Sidebar on desktop, slide-up sheet on mobile */}
-        <div className={`room__chat-wrapper ${mobileChatOpen ? 'is-open' : ''}`}>
+        <div className={`room__chat-wrapper ${chatOpen ? 'is-open' : ''}`}>
           <div
             className="room__chat-backdrop"
             onClick={handleCloseChat}

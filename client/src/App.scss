@@ -982,13 +982,82 @@ input {
   &__chat-wrapper {
     flex-shrink: 0;
 
-    .room__chat-backdrop,
-    .room__chat-header {
+    .room__chat-backdrop {
       display: none;
     }
 
-    .room__chat-panel {
-      display: contents;
+    // Desktop: chat is a side panel that stays closed until the chat button
+    // is pressed (and closes again on the next press), so the video gets the
+    // full width by default. Stays mounted while closed, so nothing typed or
+    // received is lost.
+    @media (min-width: 901px) {
+      display: none;
+
+      &.is-open {
+        display: block;
+      }
+
+      .room__chat-panel {
+        display: flex;
+        flex-direction: column;
+        width: 380px;
+        height: 72vh;
+        min-height: 520px;
+        max-height: 800px;
+        background: var(--chat-bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
+      }
+
+      .room__chat-header {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-card);
+
+        &-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--text-h);
+        }
+      }
+
+      .room__chat-close-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        padding: 6px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover {
+          background: var(--btn-secondary-hover);
+          color: var(--text-h);
+        }
+      }
+
+      // The panel is the card now; the chat inside just fills it.
+      .chat {
+        flex: 1 1 0;
+        min-height: 0;
+        height: auto;
+        max-height: none;
+        width: 100%;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+      }
     }
 
     @media (max-width: 900px) {

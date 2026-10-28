@@ -56,7 +56,20 @@ export class RoomPage {
     await this.page.getByRole('button', { name: /leave room/i }).click()
   }
 
+  // The chat panel is closed until its button is pressed; both desktop and
+  // mobile use the same toggle.
+  async openChat() {
+    const open = this.page.getByRole('button', { name: /^open chat$/i })
+    if (await open.isVisible()) await open.click()
+    await expect(this.page.getByPlaceholder(/type a message/i)).toBeVisible()
+  }
+
+  async closeChat() {
+    await this.page.getByRole('button', { name: /^close chat$/i }).first().click()
+  }
+
   async sendChat(text) {
+    await this.openChat()
     await this.page.getByPlaceholder(/type a message/i).fill(text)
     await this.page.getByRole('button', { name: /^send$/i }).click()
   }
