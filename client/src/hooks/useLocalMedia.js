@@ -16,18 +16,34 @@ async function queryPermission(kind) {
   }
 }
 
+// Spelled out even though most browsers default to them - a call app
+// without echo cancellation feeds every speaker back into the room.
+export const AUDIO_CONSTRAINTS = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+}
+
+// { video: true } gets the browser default, which in Chrome is 640x480.
+// "ideal" (not "exact") asks for 720p without failing on cameras that can't.
+export const VIDEO_CONSTRAINTS = {
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+  frameRate: { ideal: 30, max: 30 },
+}
+
 async function acquireMediaStream(kind) {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('MediaDevices API is not available. Please ensure you are using a secure connection (HTTPS).')
   }
 
   if (kind === 'audio') {
-    return await navigator.mediaDevices.getUserMedia({ audio: true })
+    return await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
   }
 
-  // Attempt standard constraints first
+  // Attempt HD constraints first
   try {
-    return await navigator.mediaDevices.getUserMedia({ video: true })
+    return await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS })
   } catch (err) {
     const isConstraintError =
       err?.name === 'OverconstrainedError' ||
@@ -37,16 +53,10 @@ async function acquireMediaStream(kind) {
       throw err
     }
 
-    // Fallbacks for browsers/devices where { video: true } rejects with OverconstrainedError
-    // Fallback 1: Ideal dimensions with user facingMode
+    // Fallbacks for browsers/devices that reject the HD constraints
+    // Fallback 1: whatever the browser picks by default
     try {
-      return await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      })
+      return await navigator.mediaDevices.getUserMedia({ video: true })
     } catch {
       // Proceed to next fallback
     }
@@ -87,6 +97,9 @@ async function acquireMediaStream(kind) {
 
 export default function useLocalMedia(onTrackChangedRef) {
   const tracksRef = useRef({ video: null, audio: null, screen: null })
+  // A second click while getUserMedia is still pending would otherwise start
+  // a second capture and leak the first track (camera light stays on).
+  const pendingRef = useRef({ video: false, audio: false, screen: false })
 
   const [stream, setStream] = useState(null)
   const [screenStream, setScreenStream] = useState(null)
@@ -122,12 +135,18 @@ export default function useLocalMedia(onTrackChangedRef) {
 
   const enable = useCallback(
     async (kind) => {
+      if (pendingRef.current[kind]) return
+      pendingRef.current[kind] = true
       setMediaError('')
 
       try {
         const media = await acquireMediaStream(kind)
         const track = media.getTracks()[0]
+        // Tells the encoder what to protect when bandwidth is short: smooth
+        // motion for a face, sharp detail for a screen.
+        if (kind === 'video' && 'contentHint' in track) track.contentHint = 'motion'
 
+        tracksRef.current[kind]?.stop()
         tracksRef.current[kind] = track
         rebuildStream()
         onTrackChangedRef.current?.(kind, track)
@@ -199,6 +218,8 @@ export default function useLocalMedia(onTrackChangedRef) {
               : `Could not access the microphone. ${err.message || 'Check browser permissions.'}`
         }
         setMediaError(message)
+      } finally {
+        pendingRef.current[kind] = false
       }
     },
     [onTrackChangedRef, rebuildStream],
@@ -217,6 +238,8 @@ export default function useLocalMedia(onTrackChangedRef) {
   }, [onTrackChangedRef])
 
   const startScreenShare = useCallback(async () => {
+    if (pendingRef.current.screen) return
+    pendingRef.current.screen = true
     setMediaError('')
 
     try {
@@ -224,9 +247,17 @@ export default function useLocalMedia(onTrackChangedRef) {
         throw new Error('Screen sharing is not supported by your browser.')
       }
 
-      const displayMedia = await navigator.mediaDevices.getDisplayMedia({ video: true })
+      // Slides and code rarely need 30fps; a lower frame rate leaves more
+      // bits per frame for readable text.
+      const displayMedia = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 15, max: 30 } },
+        audio: false,
+      })
       const track = displayMedia.getVideoTracks?.()[0] ?? displayMedia.getTracks()[0]
       if (!track) return
+      if ('contentHint' in track) track.contentHint = 'detail'
+
+      tracksRef.current.screen?.stop()
 
       tracksRef.current.screen = track
       const nextStream = new MediaStream([track])
@@ -244,6 +275,8 @@ export default function useLocalMedia(onTrackChangedRef) {
         console.error('Failed to start screen share', err)
         setMediaError('Could not share screen. Check browser permissions.')
       }
+    } finally {
+      pendingRef.current.screen = false
     }
   }, [onTrackChangedRef, stopScreenShare])
 

@@ -9,7 +9,7 @@ test('creating a room shows the code, and the connection dot turns green', async
   await expect(page.locator('.status-dot')).toHaveClass(/status-dot--connected/)
 
   const code = await room.createRoom()
-  expect(code).toMatch(/^[0-9a-f]{6}$/)
+  expect(code).toMatch(/^[a-z0-9]{6}$/)
 })
 
 test('alone in the room, your own tile renders as the large active view, not a small gallery tile', async ({

@@ -109,7 +109,6 @@ export default function App() {
                 <Lobby
                   onCreate={room.createRoom}
                   onRequestJoin={room.requestJoin}
-                  onJoin={room.joinRoom}
                   error={room.roomError}
                   disabled={room.connectionStatus !== 'connected'}
                   initialName={room.rememberedName}

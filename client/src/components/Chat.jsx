@@ -3,7 +3,9 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 const URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi
 
 function renderMessageContent(text) {
-  if (!text) return null
+  // Anything but a string (e.g. a crafted message) would throw on .split and
+  // take the whole page down for everyone who received it.
+  if (typeof text !== 'string' || !text) return null
 
   const parts = text.split(URL_REGEX)
 

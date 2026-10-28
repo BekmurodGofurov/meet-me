@@ -1,35 +1,57 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearSession, loadName, loadSession, saveName, saveSession } from '../session'
 
-export const ICE_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:openrelay.metered.ca:80' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ],
+// Used until the server sends its own list with room-created/existing-peers
+// (which can include short-lived TURN credentials - see backend/signaling.js).
+export const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
+
+const RECONNECT_MAX_DELAY_MS = 10000
+const DISCONNECTED_RESTART_DELAY_MS = 4000
+
+// In a mesh every sender uploads one copy per peer, so the per-peer budget
+// has to shrink as the room grows or the uplink saturates and quality drops
+// for everyone. Indexed by number of remote peers (1..5).
+const CAMERA_LIMITS = [
+  { maxBitrate: 1_500_000, scaleResolutionDownBy: 1 }, // 1 peer: ~720p
+  { maxBitrate: 1_000_000, scaleResolutionDownBy: 1 },
+  { maxBitrate: 700_000, scaleResolutionDownBy: 1.5 }, // ~480p
+  { maxBitrate: 450_000, scaleResolutionDownBy: 2 }, // ~360p
+  { maxBitrate: 350_000, scaleResolutionDownBy: 2 },
+]
+const SCREEN_MAX_BITRATE = [2_500_000, 2_000_000, 1_500_000, 1_200_000, 1_000_000]
+
+const limitFor = (table, peerCount) => table[Math.min(Math.max(peerCount, 1), table.length) - 1]
+
+async function limitSender(sender, { maxBitrate, scaleResolutionDownBy }) {
+  if (!sender?.track || typeof sender.getParameters !== 'function') return
+  const params = sender.getParameters()
+  // Encodings only exist once the transceiver has been negotiated; this is
+  // re-run after every negotiation, so skipping here is fine.
+  if (!params.encodings?.length) return
+  params.encodings[0].maxBitrate = maxBitrate
+  if (scaleResolutionDownBy) params.encodings[0].scaleResolutionDownBy = scaleResolutionDownBy
+  try {
+    await sender.setParameters(params)
+  } catch (err) {
+    console.warn('Could not apply bitrate limit', err)
+  }
+}
+
+function applyEncodingLimits(peer, peerCount) {
+  limitSender(peer.transceivers.video?.sender, limitFor(CAMERA_LIMITS, peerCount))
+  limitSender(peer.transceivers.screen?.sender, { maxBitrate: limitFor(SCREEN_MAX_BITRATE, peerCount) })
+}
+
+const sameTracks = (a, b) => {
+  if (!a || !b) return false
+  const aTracks = a.getTracks()
+  const bTracks = b.getTracks()
+  return aTracks.length === bTracks.length && aTracks.every((track, i) => track === bTracks[i])
 }
 
 export function getWebSocketUrl() {
   let envWsUrl = import.meta.env.VITE_WS_URL
-  const secretKey = import.meta.env.VITE_SECRET_KEY
 
-  let targetUrl
   if (envWsUrl) {
     if (envWsUrl.startsWith('http://')) {
       envWsUrl = 'ws://' + envWsUrl.slice(7)
@@ -38,22 +60,15 @@ export function getWebSocketUrl() {
     }
 
     if (envWsUrl.startsWith('ws://') || envWsUrl.startsWith('wss://')) {
-      targetUrl = new URL(envWsUrl)
-    } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const path = envWsUrl.startsWith('/') ? envWsUrl : `/${envWsUrl}`
-      targetUrl = new URL(`${protocol}//${window.location.host}${path}`)
+      return new URL(envWsUrl).toString()
     }
-  } else {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    targetUrl = new URL(`${protocol}//${window.location.host}/ws`)
+    const path = envWsUrl.startsWith('/') ? envWsUrl : `/${envWsUrl}`
+    return new URL(`${protocol}//${window.location.host}${path}`).toString()
   }
 
-  if (secretKey) {
-    targetUrl.searchParams.set('secretKey', secretKey)
-  }
-
-  return targetUrl.toString()
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return new URL(`${protocol}//${window.location.host}/ws`).toString()
 }
 
 // Owns the signaling socket and the mesh of peer connections it drives. Those
@@ -67,11 +82,24 @@ export function getWebSocketUrl() {
 export default function useRoom(tracksRef) {
   const wsRef = useRef(null)
   const peersRef = useRef(new Map())
+  // Map<peerId, Map<streamId, MediaStream>> - every remote stream as the
+  // browser delivered it. Which one is the camera and which the screen is
+  // decided from the stream ids the peer announces in media-state: stream
+  // ids survive the trip through SDP (a=msid), track ids do not.
+  const remoteStreamsByIdRef = useRef(new Map())
   const remoteStreamsRef = useRef(new Map())
   const remoteScreenStreamsRef = useRef(new Map())
   const pendingCandidatesRef = useRef(new Map())
+  // Map<peerId, Promise> - signaling for one peer is applied strictly in
+  // arrival order; onmessage is async, so without this an answer and the
+  // next offer could interleave and break perfect negotiation.
+  const signalingQueuesRef = useRef(new Map())
+  const iceServersRef = useRef(DEFAULT_ICE_SERVERS)
   const myIdRef = useRef(null)
   const mediaStateRef = useRef({ cameraOn: false, micOn: false, screenSharing: false })
+  // Only their ids matter: they are attached to the outgoing transceivers so
+  // the other side can tell camera (with mic) apart from screen.
+  const localStreamsRef = useRef(null)
   // peer-left only carries a clientId, not a name - by the time it arrives
   // the name has to already be known somewhere that isn't a stale closure
   // over participants state, so it's kept here instead.
@@ -118,6 +146,11 @@ export default function useRoom(tracksRef) {
 
   const pendingMessagesRef = useRef([])
 
+  const getLocalStreams = useCallback(() => {
+    localStreamsRef.current ??= { camera: new MediaStream(), screen: new MediaStream() }
+    return localStreamsRef.current
+  }, [])
+
   const send = useCallback((message) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message))
@@ -126,27 +159,110 @@ export default function useRoom(tracksRef) {
     }
   }, [])
 
+  const mediaStateMessage = useCallback(() => {
+    const { camera, screen } = getLocalStreams()
+    return {
+      type: 'media-state',
+      ...mediaStateRef.current,
+      cameraStreamId: camera.id,
+      screenStreamId: screen.id,
+    }
+  }, [getLocalStreams])
+
   const announceMediaState = useCallback(() => {
-    send({ type: 'media-state', ...mediaStateRef.current })
-  }, [send])
+    send(mediaStateMessage())
+  }, [send, mediaStateMessage])
+
+  const applyAllEncodingLimits = useCallback(() => {
+    const count = peersRef.current.size
+    peersRef.current.forEach((peer) => applyEncodingLimits(peer, count))
+  }, [])
+
+  // Clears everything tied to the current room - used by leaving, by a
+  // failed rejoin, and by losing the signaling connection.
+  const resetRoomState = useCallback(() => {
+    peersRef.current.forEach((peer) => peer.pc.close())
+    peersRef.current.clear()
+    remoteStreamsByIdRef.current.clear()
+    remoteStreamsRef.current.clear()
+    remoteScreenStreamsRef.current.clear()
+    participantNamesRef.current.clear()
+    pendingCandidatesRef.current.clear()
+    signalingQueuesRef.current.clear()
+    remoteMediaRef.current = {}
+
+    setCurrentRoom(null)
+    setMe(null)
+    setParticipants([])
+    setRemoteStreams({})
+    setRemoteScreenStreams({})
+    setRemoteMedia({})
+    setMessages([])
+    setWaitingForAdmit(false)
+    waitingRequestIdRef.current = null
+    setAdmitRequests([])
+    setIsOwner(false)
+    setInviteLink(null)
+  }, [])
 
   useEffect(() => {
-    // Same-origin, path-based - not a hardcoded port. In production this
-    // lets a single nginx/domain proxy /ws to the backend container on
-    // whatever internal port it actually runs on, no separate public port
-    // needed. In dev, Vite's own server.proxy (see vite.config.js) forwards
-    // this to the local backend the same way.
-    const wsUrl = getWebSocketUrl()
-    const socket = new WebSocket(wsUrl)
-    wsRef.current = socket
+    let socket = null
+    let disposed = false
+    let reconnectTimer = null
+    let attempt = 0
 
-    const post = (message) => socket.send(JSON.stringify(message))
+    const post = (message) => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
+    }
+
+    const enqueue = (peerId, task) => {
+      const previous = signalingQueuesRef.current.get(peerId) ?? Promise.resolve()
+      const next = previous.then(task).catch((err) => console.error('Signaling step failed', err))
+      signalingQueuesRef.current.set(peerId, next)
+      return next
+    }
+
+    // Re-derive which of a peer's streams is the camera and which is the
+    // screen. Runs whenever a track arrives or the peer's media-state
+    // changes, so the order those two arrive in doesn't matter.
+    const refreshRemoteStreams = (peerId) => {
+      const info = remoteMediaRef.current[peerId] ?? {}
+      const byId = remoteStreamsByIdRef.current.get(peerId) ?? new Map()
+
+      const screenSource = info.screenStreamId ? byId.get(info.screenStreamId) : undefined
+      const cameraSource = info.cameraStreamId
+        ? byId.get(info.cameraStreamId)
+        : [...byId.values()].find((stream) => stream !== screenSource)
+
+      const update = (ref, setState, source, visible) => {
+        const current = ref.current.get(peerId)
+        if (!source || !visible) {
+          if (!current) return
+          ref.current.delete(peerId)
+          setState((prev) => {
+            const next = { ...prev }
+            delete next[peerId]
+            return next
+          })
+          return
+        }
+        // A fresh MediaStream object makes React (and the <video>) notice
+        // tracks added by a renegotiation.
+        if (sameTracks(current, source)) return
+        const wrapped = new MediaStream(source.getTracks())
+        ref.current.set(peerId, wrapped)
+        setState((prev) => ({ ...prev, [peerId]: wrapped }))
+      }
+
+      update(remoteStreamsRef, setRemoteStreams, cameraSource, true)
+      update(remoteScreenStreamsRef, setRemoteScreenStreams, screenSource, Boolean(info.screenSharing))
+    }
 
     const getPeer = (peerId) => {
       const existing = peersRef.current.get(peerId)
       if (existing) return existing
 
-      const pc = new RTCPeerConnection(ICE_CONFIG)
+      const pc = new RTCPeerConnection({ iceServers: iceServersRef.current })
       const peer = {
         pc,
         // Deterministic and symmetric: exactly one side of any pair is polite,
@@ -155,7 +271,8 @@ export default function useRoom(tracksRef) {
         makingOffer: false,
         ignoreOffer: false,
         settingRemoteAnswer: false,
-        senders: { video: null, audio: null, screen: null },
+        transceivers: {},
+        restartTimer: null,
       }
 
       pc.onnegotiationneeded = async () => {
@@ -174,71 +291,48 @@ export default function useRoom(tracksRef) {
         if (candidate) post({ type: 'ice-candidate', targetId: peerId, payload: candidate })
       }
 
-      pc.ontrack = (event) => {
-        const { track } = event
-        const transceiver = event.transceiver
-        const remoteInfo = remoteMediaRef.current?.[peerId]
-
-        const isScreen =
-          Boolean(track.id && remoteInfo?.screenTrackId && track.id === remoteInfo.screenTrackId) ||
-          (transceiver && transceiver._isScreen === true) ||
-          Boolean(remoteInfo?.screenSharing && !remoteInfo?.cameraOn) ||
-          (track.kind === 'video' &&
-            remoteStreamsRef.current.get(peerId)?.getVideoTracks()?.length > 0)
-
-        if (isScreen) {
-          let screenStream = remoteScreenStreamsRef.current.get(peerId)
-          if (!screenStream) {
-            screenStream = new MediaStream()
-          }
-          if (!screenStream.getTracks().some((t) => t.id === track.id)) {
-            screenStream.addTrack(track)
-          }
-          const updated = new MediaStream(screenStream.getTracks())
-          remoteScreenStreamsRef.current.set(peerId, updated)
-          setRemoteScreenStreams((prev) => ({ ...prev, [peerId]: updated }))
-        } else {
-          let stream = remoteStreamsRef.current.get(peerId)
-          if (!stream) {
-            stream = new MediaStream()
-          }
-          if (!stream.getTracks().some((existingTrack) => existingTrack.id === track.id)) {
-            stream.addTrack(track)
-          }
-          const updatedStream = new MediaStream(stream.getTracks())
-          remoteStreamsRef.current.set(peerId, updatedStream)
-          setRemoteStreams((prev) => ({ ...prev, [peerId]: updatedStream }))
+      // Network changes (Wi-Fi -> mobile, a VPN toggling) kill the current
+      // ICE path. restartIce() gathers new candidates and renegotiates
+      // instead of leaving the tile frozen until someone rejoins.
+      pc.onconnectionstatechange = () => {
+        clearTimeout(peer.restartTimer)
+        if (pc.connectionState === 'failed') {
+          pc.restartIce?.()
+        } else if (pc.connectionState === 'disconnected') {
+          peer.restartTimer = setTimeout(() => {
+            if (pc.connectionState === 'disconnected') pc.restartIce?.()
+          }, DISCONNECTED_RESTART_DELAY_MS)
+        } else if (pc.connectionState === 'connected') {
+          applyEncodingLimits(peer, peersRef.current.size)
         }
       }
 
-      const { video, audio, screen } = tracksRef.current
-
-      // Send what exists now; ask to receive the kinds we can't send yet, so
-      // there is always something to negotiate and the m-lines exist for a
-      // track switched on later. Order is deterministic: [camera, audio, screen].
-      // Each transceiver is tagged with _isScreen so ontrack can reliably
-      // distinguish camera from screen regardless of which tracks are active.
-      if (video) {
-        const sender = pc.addTrack(video)
-        peer.senders.video = sender
-        const t = pc.getTransceivers().find((tr) => tr.sender === sender)
-        if (t) t._isScreen = false
-      } else {
-        const t = pc.addTransceiver('video', { direction: 'recvonly' })
-        t._isScreen = false
+      pc.ontrack = ({ track, streams }) => {
+        const stream = streams?.[0] ?? new MediaStream([track])
+        let byId = remoteStreamsByIdRef.current.get(peerId)
+        if (!byId) {
+          byId = new Map()
+          remoteStreamsByIdRef.current.set(peerId, byId)
+        }
+        byId.set(stream.id, stream)
+        refreshRemoteStreams(peerId)
       }
 
-      if (audio) peer.senders.audio = pc.addTrack(audio)
-      else pc.addTransceiver('audio', { direction: 'recvonly' })
-
-      if (screen) {
-        const sender = pc.addTrack(screen)
-        peer.senders.screen = sender
-        const t = pc.getTransceivers().find((tr) => tr.sender === sender)
-        if (t) t._isScreen = true
-      } else {
-        const t = pc.addTransceiver('video', { direction: 'recvonly' })
-        t._isScreen = true
+      // Always the same three slots, in the same order: camera, mic, screen.
+      // Camera and mic share one stream id (so they're lip-synced and shown
+      // in one tile), the screen gets its own. A slot whose device is off is
+      // recvonly until it is first switched on.
+      const { video, audio, screen } = tracksRef.current
+      const { camera: cameraStream, screen: screenStream } = getLocalStreams()
+      const addSlot = (track, kind, stream) =>
+        pc.addTransceiver(track ?? kind, {
+          direction: track ? 'sendrecv' : 'recvonly',
+          streams: [stream],
+        })
+      peer.transceivers = {
+        video: addSlot(video, 'video', cameraStream),
+        audio: addSlot(audio, 'audio', cameraStream),
+        screen: addSlot(screen, 'video', screenStream),
       }
 
       peersRef.current.set(peerId, peer)
@@ -246,28 +340,27 @@ export default function useRoom(tracksRef) {
     }
 
     const closePeer = (peerId) => {
-      peersRef.current.get(peerId)?.pc.close()
+      const peer = peersRef.current.get(peerId)
+      if (peer) {
+        clearTimeout(peer.restartTimer)
+        peer.pc.close()
+      }
       peersRef.current.delete(peerId)
+      remoteStreamsByIdRef.current.delete(peerId)
       remoteStreamsRef.current.delete(peerId)
       remoteScreenStreamsRef.current.delete(peerId)
       pendingCandidatesRef.current.delete(peerId)
+      signalingQueuesRef.current.delete(peerId)
       delete remoteMediaRef.current[peerId]
 
-      setRemoteStreams((prev) => {
+      const without = (prev) => {
         const next = { ...prev }
         delete next[peerId]
         return next
-      })
-      setRemoteScreenStreams((prev) => {
-        const next = { ...prev }
-        delete next[peerId]
-        return next
-      })
-      setRemoteMedia((prev) => {
-        const next = { ...prev }
-        delete next[peerId]
-        return next
-      })
+      }
+      setRemoteStreams(without)
+      setRemoteScreenStreams(without)
+      setRemoteMedia(without)
     }
 
     const handleDescription = async (peerId, description) => {
@@ -302,252 +395,299 @@ export default function useRoom(tracksRef) {
         await pc.setLocalDescription()
         post({ type: 'answer', targetId: peerId, payload: pc.localDescription })
       }
+
+      // Every negotiation can create or change encodings, so (re)apply the
+      // bitrate caps now that they exist.
+      applyEncodingLimits(peer, peersRef.current.size)
     }
 
-    socket.onopen = () => {
-      setConnectionStatus('connected')
-
-      // Flush any queued messages that were sent before socket opened
-      while (pendingMessagesRef.current.length > 0) {
-        const msg = pendingMessagesRef.current.shift()
-        post(msg)
+    const handleCandidate = async (peerId, candidate) => {
+      const peer = peersRef.current.get(peerId)
+      if (!peer || !peer.pc.remoteDescription) {
+        const queue = pendingCandidatesRef.current.get(peerId) ?? []
+        queue.push(candidate)
+        pendingCandidatesRef.current.set(peerId, queue)
+        return
       }
-
-      if (!isJoinRoute) {
-        const stored = storedSessionRef.current || loadSession()
-        if (stored) {
-          storedSessionRef.current = stored
-          isRejoiningRef.current = true
-          post({ type: 'join-room', roomId: stored.roomId, name: stored.name })
-        }
-      }
-    }
-    socket.onerror = () => setConnectionStatus('error')
-    socket.onclose = () => setConnectionStatus('closed')
-
-    socket.onmessage = async (event) => {
-      const data = JSON.parse(event.data)
-
       try {
-        switch (data.type) {
-          case 'room-created':
-            myIdRef.current = data.clientId
-            setMe({ clientId: data.clientId, name: data.name })
-            setCurrentRoom(data.roomId)
-            setParticipants([])
-            setRejoining(false)
-            isRejoiningRef.current = false
-            setRememberedName(data.name)
-            setMessages([])
-            setIsOwner(true)
-            setWaitingForAdmit(false)
-            saveSession(data.roomId, data.name)
-            storedSessionRef.current = { roomId: data.roomId, name: data.name }
-            break
-
-          case 'existing-peers': {
-            myIdRef.current = data.clientId
-            setMe({ clientId: data.clientId, name: data.name })
-            setParticipants(data.peers)
-            setCurrentRoom(data.roomId)
-            setRejoining(false)
-            isRejoiningRef.current = false
-            setRememberedName(data.name)
-            setMessages([])
-            setWaitingForAdmit(false)
-            waitingRequestIdRef.current = null
-            setIsOwner(Boolean(data.ownerId && data.ownerId === data.clientId))
-            saveSession(data.roomId, data.name)
-            storedSessionRef.current = { roomId: data.roomId, name: data.name }
-
-            // Creating the connection is enough - onnegotiationneeded fires and
-            // sends the offer.
-            data.peers.forEach((peer) => {
-              getPeer(peer.clientId)
-              participantNamesRef.current.set(peer.clientId, peer.name)
-            })
-            post({ type: 'media-state', ...mediaStateRef.current })
-            break
-          }
-
-          case 'peer-joined':
-            participantNamesRef.current.set(data.clientId, data.name)
-            setParticipants((prev) => [...prev, { clientId: data.clientId, name: data.name }])
-            setMessages((prev) => [
-              ...prev,
-              { id: crypto.randomUUID(), kind: 'system', tone: 'join', text: `${data.name} joined the room` },
-            ])
-            // Tell the newcomer whether our camera/mic are already on, since
-            // they missed the announcement we made when we arrived.
-            post({ type: 'media-state', ...mediaStateRef.current })
-            break
-
-          case 'peer-left': {
-            const name = participantNamesRef.current.get(data.clientId) ?? 'Someone'
-            participantNamesRef.current.delete(data.clientId)
-
-            setParticipants((prev) => prev.filter((p) => p.clientId !== data.clientId))
-            setMessages((prev) => [
-              ...prev,
-              { id: crypto.randomUUID(), kind: 'system', tone: 'leave', text: `${name} left the room` },
-            ])
-            closePeer(data.clientId)
-            break
-          }
-
-          case 'owner-changed':
-            setIsOwner(data.newOwnerId === myIdRef.current)
-            break
-
-          case 'waiting':
-            setWaitingForAdmit(true)
-            waitingRequestIdRef.current = data.requestId
-            setRoomError('')
-            break
-
-          case 'join-rejected':
-            setWaitingForAdmit(false)
-            waitingRequestIdRef.current = null
-            setRoomError(data.reason || 'The host declined your join request.')
-            break
-
-          case 'admit-request':
-            setAdmitRequests((prev) => {
-              if (prev.some((r) => r.requestId === data.requestId)) return prev
-              return [...prev, { requestId: data.requestId, name: data.name, clientId: data.clientId }]
-            })
-            break
-
-          case 'admit-request-cancelled':
-            setAdmitRequests((prev) => prev.filter((r) => r.requestId !== data.requestId))
-            break
-
-          case 'invite-created': {
-            const origin = window.location.origin
-            setInviteLink(`${origin}/join/${data.token}`)
-            break
-          }
-
-          case 'invite-resolved':
-            setResolvedRoomId(data.roomId)
-            setResolveError(null)
-            break
-
-          case 'offer':
-          case 'answer':
-            await handleDescription(data.senderId, data.payload)
-            break
-
-          case 'ice-candidate': {
-            if (!data.payload) break
-            const peer = peersRef.current.get(data.senderId)
-            if (!peer || !peer.pc.remoteDescription) {
-              const queue = pendingCandidatesRef.current.get(data.senderId) ?? []
-              queue.push(data.payload)
-              pendingCandidatesRef.current.set(data.senderId, queue)
-              break
-            }
-            try {
-              await peer.pc.addIceCandidate(data.payload)
-            } catch (err) {
-              // A candidate for an offer we deliberately ignored is expected.
-              if (!peer.ignoreOffer) console.error('Failed to add ICE candidate', err)
-            }
-            break
-          }
-
-          case 'media-state': {
-            const nextMedia = {
-              cameraOn: data.cameraOn,
-              micOn: data.micOn,
-              ...(data.screenSharing !== undefined && { screenSharing: Boolean(data.screenSharing) }),
-              ...(data.screenTrackId !== undefined && { screenTrackId: data.screenTrackId }),
-            }
-            remoteMediaRef.current[data.from] = nextMedia
-            setRemoteMedia((prev) => ({
-              ...prev,
-              [data.from]: nextMedia,
-            }))
-
-            if (data.screenSharing && data.screenTrackId) {
-              const cameraStream = remoteStreamsRef.current.get(data.from)
-              const screenTrack = cameraStream?.getVideoTracks()?.find((t) => t.id === data.screenTrackId)
-              if (screenTrack) {
-                if (typeof cameraStream.removeTrack === 'function') {
-                  cameraStream.removeTrack(screenTrack)
-                }
-                const remainingTracks = cameraStream.getTracks().filter((t) => t.id !== screenTrack.id)
-                const updatedCamera = new MediaStream(remainingTracks)
-                remoteStreamsRef.current.set(data.from, updatedCamera)
-                setRemoteStreams((prev) => ({ ...prev, [data.from]: updatedCamera }))
-
-                let screenStream = remoteScreenStreamsRef.current.get(data.from)
-                if (!screenStream) screenStream = new MediaStream()
-                if (!screenStream.getTracks().some((t) => t.id === screenTrack.id)) {
-                  screenStream.addTrack(screenTrack)
-                }
-                const updatedScreen = new MediaStream(screenStream.getTracks())
-                remoteScreenStreamsRef.current.set(data.from, updatedScreen)
-                setRemoteScreenStreams((prev) => ({ ...prev, [data.from]: updatedScreen }))
-              }
-            } else if (!data.screenSharing) {
-              remoteScreenStreamsRef.current.delete(data.from)
-              setRemoteScreenStreams((prev) => {
-                const next = { ...prev }
-                delete next[data.from]
-                return next
-              })
-            }
-            break
-          }
-
-          case 'chat-message':
-            setMessages((prev) => [
-              ...prev,
-              { id: crypto.randomUUID(), kind: 'chat', from: data.from, fromName: data.fromName, text: data.text },
-            ])
-            break
-
-          case 'error': {
-            const wasRejoining = isRejoiningRef.current
-            if (storedSessionRef.current || wasRejoining) {
-              clearSession()
-              storedSessionRef.current = null
-              setRejoining(false)
-              isRejoiningRef.current = false
-            }
-
-            if (data.message === 'Invalid or expired invite link') {
-              setResolveError(data.message)
-            } else if (wasRejoining) {
-              // A stale room was deleted while away; silently return to the clean home page.
-              setRoomError('')
-            } else {
-              const message =
-                data.message === 'Room does not exist' ? 'This room does not exist' : data.message
-              setRoomError(message)
-            }
-            break
-          }
-
-          default:
-            break
-        }
+        await peer.pc.addIceCandidate(candidate)
       } catch (err) {
-        console.error(`Failed handling ${data.type}`, err)
+        // A candidate for an offer we deliberately ignored is expected.
+        if (!peer.ignoreOffer) console.error('Failed to add ICE candidate', err)
       }
     }
+
+    const enterRoom = (data) => {
+      if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+        iceServersRef.current = data.iceServers
+      }
+      myIdRef.current = data.clientId
+      setMe({ clientId: data.clientId, name: data.name })
+      setCurrentRoom(data.roomId)
+      setRejoining(false)
+      isRejoiningRef.current = false
+      setRememberedName(data.name)
+      setMessages([])
+      setWaitingForAdmit(false)
+      waitingRequestIdRef.current = null
+      setRoomError('')
+      saveSession(data.roomId, data.name, data.rejoinToken)
+      storedSessionRef.current = { roomId: data.roomId, name: data.name, rejoinToken: data.rejoinToken }
+    }
+
+    const handleMessage = async (data) => {
+      switch (data.type) {
+        case 'room-created':
+          enterRoom(data)
+          setParticipants([])
+          setIsOwner(true)
+          break
+
+        case 'existing-peers': {
+          enterRoom(data)
+          setParticipants(data.peers)
+          setIsOwner(Boolean(data.ownerId && data.ownerId === data.clientId))
+
+          // Creating the connection is enough - onnegotiationneeded fires and
+          // sends the offer.
+          data.peers.forEach((peer) => {
+            getPeer(peer.clientId)
+            participantNamesRef.current.set(peer.clientId, peer.name)
+          })
+          post(mediaStateMessage())
+          break
+        }
+
+        case 'peer-joined':
+          participantNamesRef.current.set(data.clientId, data.name)
+          setParticipants((prev) => [
+            ...prev.filter((p) => p.clientId !== data.clientId),
+            { clientId: data.clientId, name: data.name },
+          ])
+          setMessages((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), kind: 'system', tone: 'join', text: `${data.name} joined the room` },
+          ])
+          // Tell the newcomer whether our camera/mic are already on, since
+          // they missed the announcement we made when we arrived.
+          post(mediaStateMessage())
+          break
+
+        case 'peer-left': {
+          const name = participantNamesRef.current.get(data.clientId) ?? 'Someone'
+          participantNamesRef.current.delete(data.clientId)
+
+          setParticipants((prev) => prev.filter((p) => p.clientId !== data.clientId))
+          setMessages((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), kind: 'system', tone: 'leave', text: `${name} left the room` },
+          ])
+          closePeer(data.clientId)
+          // Fewer peers = more upload budget for each remaining one.
+          applyAllEncodingLimits()
+          break
+        }
+
+        case 'owner-changed':
+          setIsOwner(data.newOwnerId === myIdRef.current)
+          break
+
+        case 'waiting':
+          setWaitingForAdmit(true)
+          waitingRequestIdRef.current = data.requestId
+          setRoomError('')
+          break
+
+        case 'join-rejected':
+          setWaitingForAdmit(false)
+          waitingRequestIdRef.current = null
+          setRoomError(data.reason || 'The host declined your join request.')
+          break
+
+        case 'admit-request':
+          setAdmitRequests((prev) => {
+            if (prev.some((r) => r.requestId === data.requestId)) return prev
+            return [...prev, { requestId: data.requestId, name: data.name, clientId: data.clientId }]
+          })
+          break
+
+        case 'admit-request-cancelled':
+          setAdmitRequests((prev) => prev.filter((r) => r.requestId !== data.requestId))
+          break
+
+        case 'invite-created':
+          setInviteLink(`${window.location.origin}/join/${data.token}`)
+          break
+
+        case 'invite-resolved':
+          setResolvedRoomId(data.roomId)
+          setResolveError(null)
+          break
+
+        case 'offer':
+        case 'answer':
+          if (data.senderId && data.payload) {
+            await enqueue(data.senderId, () => handleDescription(data.senderId, data.payload))
+          }
+          break
+
+        case 'ice-candidate':
+          if (data.senderId && data.payload) {
+            await enqueue(data.senderId, () => handleCandidate(data.senderId, data.payload))
+          }
+          break
+
+        case 'media-state': {
+          const nextMedia = {
+            cameraOn: Boolean(data.cameraOn),
+            micOn: Boolean(data.micOn),
+            screenSharing: Boolean(data.screenSharing),
+            cameraStreamId: data.cameraStreamId ?? null,
+            screenStreamId: data.screenStreamId ?? null,
+          }
+          remoteMediaRef.current[data.from] = nextMedia
+          setRemoteMedia((prev) => ({ ...prev, [data.from]: nextMedia }))
+          refreshRemoteStreams(data.from)
+          break
+        }
+
+        case 'chat-message':
+          // The server validates this too; a peer must never be able to crash
+          // our render with a non-string.
+          if (typeof data.text !== 'string') break
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              kind: 'chat',
+              from: data.from,
+              fromName: typeof data.fromName === 'string' ? data.fromName : 'Guest',
+              text: data.text,
+            },
+          ])
+          break
+
+        case 'error': {
+          const wasRejoining = isRejoiningRef.current
+          if (wasRejoining) {
+            clearSession()
+            storedSessionRef.current = null
+            setRejoining(false)
+            isRejoiningRef.current = false
+            resetRoomState()
+          }
+
+          if (data.message === 'Invalid or expired invite link') {
+            setResolveError(data.message)
+          } else if (wasRejoining) {
+            // A stale room was deleted while away; silently return to the clean home page.
+            setRoomError('')
+          } else {
+            const message =
+              data.message === 'Room does not exist' ? 'This room does not exist' : data.message
+            setRoomError(message)
+          }
+          break
+        }
+
+        default:
+          break
+      }
+    }
+
+    const connect = () => {
+      // Same-origin, path-based - not a hardcoded port. In production this
+      // lets a single nginx/domain proxy /ws to the backend container on
+      // whatever internal port it actually runs on, no separate public port
+      // needed. In dev, Vite's own server.proxy (see vite.config.js) forwards
+      // this to the local backend the same way.
+      socket = new WebSocket(getWebSocketUrl())
+      wsRef.current = socket
+
+      socket.onopen = () => {
+        attempt = 0
+        setConnectionStatus('connected')
+
+        // Flush any queued messages that were sent before socket opened
+        while (pendingMessagesRef.current.length > 0) {
+          post(pendingMessagesRef.current.shift())
+        }
+
+        if (!isJoinRoute) {
+          const stored = storedSessionRef.current || loadSession()
+          if (stored) {
+            storedSessionRef.current = stored
+            isRejoiningRef.current = true
+            setRejoining(true)
+            post({ type: 'join-room', roomId: stored.roomId, name: stored.name, rejoinToken: stored.rejoinToken })
+          }
+        }
+      }
+
+      socket.onerror = () => setConnectionStatus('error')
+
+      // The signaling server lost us (server restart, network drop, laptop
+      // sleep). The server has already told the room we left and the peers
+      // have closed their side, so tear ours down too and come back with
+      // the rejoin token from the saved session.
+      socket.onclose = () => {
+        setConnectionStatus('closed')
+        if (disposed) return
+
+        const hadRoom = Boolean(storedSessionRef.current)
+        const wasWaiting = Boolean(waitingRequestIdRef.current)
+        resetRoomState()
+        if (wasWaiting) setRoomError('Connection to the server was lost. Please ask to join again.')
+        if (hadRoom) {
+          isRejoiningRef.current = true
+          setRejoining(true)
+        }
+
+        const delay = Math.min(1000 * 2 ** attempt, RECONNECT_MAX_DELAY_MS)
+        attempt += 1
+        reconnectTimer = setTimeout(() => {
+          setConnectionStatus('connecting')
+          connect()
+        }, delay)
+      }
+
+      socket.onmessage = async (event) => {
+        let data
+        try {
+          data = JSON.parse(event.data)
+        } catch {
+          return
+        }
+        if (!data || typeof data.type !== 'string') return
+
+        try {
+          await handleMessage(data)
+        } catch (err) {
+          console.error(`Failed handling ${data.type}`, err)
+        }
+      }
+    }
+
+    connect()
 
     const peers = peersRef.current
-    const remoteStreams = remoteStreamsRef.current
-    const remoteScreenStreams = remoteScreenStreamsRef.current
+    const remoteStreamsById = remoteStreamsByIdRef.current
+    const remoteStreamsMap = remoteStreamsRef.current
+    const remoteScreenStreamsMap = remoteScreenStreamsRef.current
     const pendingCandidates = pendingCandidatesRef.current
 
     return () => {
-      peers.forEach((peer) => peer.pc.close())
+      disposed = true
+      clearTimeout(reconnectTimer)
+
+      peers.forEach((peer) => {
+        clearTimeout(peer.restartTimer)
+        peer.pc.close()
+      })
       peers.clear()
-      remoteStreams.clear()
-      remoteScreenStreams.clear()
+      remoteStreamsById.clear()
+      remoteStreamsMap.clear()
+      remoteScreenStreamsMap.clear()
       pendingCandidates.clear()
 
       socket.onopen = null
@@ -561,87 +701,33 @@ export default function useRoom(tracksRef) {
         socket.close()
       }
     }
-  }, [tracksRef, isJoinRoute])
+  }, [tracksRef, isJoinRoute, getLocalStreams, mediaStateMessage, resetRoomState, applyAllEncodingLimits])
 
+  // Switching a device on or off only swaps the track on an existing
+  // transceiver (replaceTrack needs no renegotiation). The first time a slot
+  // starts sending, its direction flips to sendrecv, which renegotiates once.
   const publishTrack = useCallback(
     (kind, track) => {
       if (kind === 'video') mediaStateRef.current.cameraOn = Boolean(track)
       else if (kind === 'audio') mediaStateRef.current.micOn = Boolean(track)
-      else if (kind === 'screen') {
-        mediaStateRef.current.screenSharing = Boolean(track)
-        mediaStateRef.current.screenTrackId = track ? track.id : null
-      }
+      else if (kind === 'screen') mediaStateRef.current.screenSharing = Boolean(track)
 
       peersRef.current.forEach((peer) => {
-        const { pc, senders } = peer
+        const transceiver = peer.transceivers[kind]
+        if (!transceiver) return
 
-        if (!track) {
-          if (senders[kind]) {
-            senders[kind].replaceTrack(null)
-            const transceiver = pc.getTransceivers().find((t) => t.sender === senders[kind])
-            if (transceiver && transceiver.direction !== 'recvonly') {
-              transceiver.direction = 'recvonly'
-            }
-          }
-          return
-        }
-
-        if (senders[kind]) {
-          senders[kind].replaceTrack(track)
-          const transceiver = pc.getTransceivers().find((t) => t.sender === senders[kind])
-          if (transceiver && transceiver.direction !== 'sendrecv') {
-            transceiver.direction = 'sendrecv'
-          }
-          return
-        }
-
-        const transceivers = pc.getTransceivers ? pc.getTransceivers() : []
-        const videoTransceivers = transceivers.filter(
-          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video',
+        Promise.resolve(transceiver.sender.replaceTrack(track)).catch((err) =>
+          console.error(`Failed to switch ${kind} track`, err),
         )
-
-        let reusable = null
-        if (kind === 'video') {
-          reusable =
-            transceivers.find(
-              (t) =>
-                t._isScreen === false &&
-                (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
-            ) || videoTransceivers[0]
-        } else if (kind === 'screen') {
-          reusable =
-            transceivers.find(
-              (t) =>
-                t._isScreen === true &&
-                (t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'),
-            ) || videoTransceivers[1]
-        } else if (kind === 'audio') {
-          reusable = transceivers.find(
-            (t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio',
-          )
-        }
-
-        if (reusable) {
-          reusable.direction = 'sendrecv'
-          if (reusable.sender) {
-            reusable.sender.replaceTrack(track)
-            senders[kind] = reusable.sender
-          } else {
-            senders[kind] = pc.addTrack(track)
-          }
-        } else {
-          const sender = pc.addTrack(track)
-          senders[kind] = sender
-          if (kind === 'video' || kind === 'screen') {
-            const newT = pc.getTransceivers().find((t) => t.sender === sender)
-            if (newT) newT._isScreen = kind === 'screen'
-          }
+        if (track && transceiver.direction !== 'sendrecv') {
+          transceiver.direction = 'sendrecv'
         }
       })
 
       announceMediaState()
+      applyAllEncodingLimits()
     },
-    [announceMediaState],
+    [announceMediaState, applyAllEncodingLimits],
   )
 
   const createRoom = useCallback(
@@ -651,17 +737,6 @@ export default function useRoom(tracksRef) {
       setRememberedName(name)
       saveName(name)
       send({ type: 'create-room', name })
-    },
-    [send],
-  )
-
-  const joinRoom = useCallback(
-    (roomId, name) => {
-      isRejoiningRef.current = false
-      setRoomError('')
-      setRememberedName(name)
-      saveName(name)
-      send({ type: 'join-room', roomId, name })
     },
     [send],
   )
@@ -715,30 +790,10 @@ export default function useRoom(tracksRef) {
     storedSessionRef.current = null
     isRejoiningRef.current = false
 
-    peersRef.current.forEach((peer) => peer.pc.close())
-    peersRef.current.clear()
-    remoteStreamsRef.current.clear()
-    remoteScreenStreamsRef.current.clear()
-    participantNamesRef.current.clear()
-    pendingCandidatesRef.current.clear()
-
     send({ type: 'leave-room' })
-
-    setCurrentRoom(null)
-    setMe(null)
-    setParticipants([])
-    setRemoteStreams({})
-    setRemoteScreenStreams({})
-    setRemoteMedia({})
-    remoteMediaRef.current = {}
+    resetRoomState()
     setRoomError('')
-    setMessages([])
-    setWaitingForAdmit(false)
-    waitingRequestIdRef.current = null
-    setAdmitRequests([])
-    setIsOwner(false)
-    setInviteLink(null)
-  }, [send])
+  }, [send, resetRoomState])
 
   const sendChatMessage = useCallback(
     (text) => {
@@ -778,11 +833,9 @@ export default function useRoom(tracksRef) {
     messages,
     publishTrack,
     createRoom,
-    joinRoom,
     leaveRoom,
     sendChatMessage,
 
-    // New features:
     waitingForAdmit,
     admitRequests,
     isOwner,

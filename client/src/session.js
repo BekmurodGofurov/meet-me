@@ -38,10 +38,12 @@ export function loadSession() {
   }
 }
 
-export function saveSession(roomId, name) {
+// rejoinToken is the server's proof that this browser was already admitted
+// to the room - without it a reload would have to ask the host again.
+export function saveSession(roomId, name, rejoinToken) {
   saveName(name)
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ roomId, name }))
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ roomId, name, ...(rejoinToken && { rejoinToken }) }))
   } catch {
     // Ignore - see note above.
   }

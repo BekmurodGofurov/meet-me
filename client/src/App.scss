@@ -1773,6 +1773,36 @@ input {
 }
 
 
+.video-tile__enable-sound {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 8px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.error-boundary {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 16px;
+  text-align: center;
+  background: var(--bg);
+  color: var(--text);
+
+  h1 {
+    color: var(--text-h);
+    font-size: 24px;
+    margin: 0;
+  }
+}
+
 // ─── Landing Page ────────────────────────────────────────────────────────────
 
 .landing {

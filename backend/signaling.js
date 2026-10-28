@@ -3,23 +3,93 @@ import crypto from 'crypto';
 
 const MAX_ROOM_SIZE = 6;
 const MAX_NAME_LENGTH = 24;
+const MAX_CHAT_LENGTH = 500;
+const MAX_STREAM_ID_LENGTH = 64;
+
+// SDP for 3 m-lines is a few KB; 64 KB leaves plenty of headroom while
+// stopping a client from pushing the ws default of 100 MB through the server.
+const MAX_PAYLOAD_BYTES = 64 * 1024;
+
+// 6 characters from a 36-character alphabet is ~2.2 billion codes (the old
+// hex code was ~16.7 million). Combined with the failed-attempt limit below,
+// guessing a live room code is no longer practical.
+const ROOM_CODE_LENGTH = 6;
+const ROOM_CODE_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+const HEARTBEAT_INTERVAL_MS = 30000;
+
+// Token bucket per connection: bursts (like the ICE candidates of a fresh
+// mesh) are fine, a sustained flood is dropped.
+const MESSAGE_BURST = 200;
+const MESSAGES_PER_SECOND = 50;
+
+// Per-IP limit on lookups that fail (unknown room code / invite token) so
+// codes can't be brute-forced.
+const MAX_FAILED_LOOKUPS = 20;
+const FAILED_LOOKUP_WINDOW_MS = 60000;
 
 const cleanName = (value) => {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   return trimmed.slice(0, MAX_NAME_LENGTH) || 'Guest';
 };
 
+const cleanStreamId = (value) =>
+  typeof value === 'string' && value.length <= MAX_STREAM_ID_LENGTH ? value : null;
+
+const isPlainObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 const roster = (roomClients, excludeId) =>
   Array.from(roomClients.entries())
     .filter(([clientId]) => clientId !== excludeId)
     .map(([clientId, member]) => ({ clientId, name: member.name }));
 
+const generateRoomCode = (rooms) => {
+  let code;
+  do {
+    code = Array.from(
+      { length: ROOM_CODE_LENGTH },
+      () => ROOM_CODE_ALPHABET[crypto.randomInt(ROOM_CODE_ALPHABET.length)],
+    ).join('');
+  } while (rooms.has(code));
+  return code;
+};
+
+// Default ICE servers: one public STUN server. TURN, when configured, is
+// added per client with short-lived credentials (see turnCredentials).
+const DEFAULT_STUN_URLS = ['stun:stun.l.google.com:19302'];
+
+// coturn "use-auth-secret" (TURN REST API) credentials: the username carries
+// its own expiry, the password is an HMAC of it with a secret shared only by
+// this server and coturn. Nothing long-lived ever reaches the browser.
+const turnCredentials = (secret, ttlSeconds, clientId) => {
+  const username = `${Math.floor(Date.now() / 1000) + ttlSeconds}:${clientId}`;
+  const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
+  return { username, credential };
+};
+
 // Attaches the signaling logic to an already-created http/https server and
 // returns the WebSocketServer. Kept separate from server.js so tests can run
 // this against a plain http server on an ephemeral port, with no dependency
 // on the real TLS certificate or a fixed port.
-export function createSignalingServer(server, { roomGraceMs = 30000, secretKey } = {}) {
-  const wss = new WebSocketServer({ server });
+export function createSignalingServer(
+  server,
+  {
+    roomGraceMs = 30000,
+    allowedOrigins = [],
+    trustProxy = false,
+    stunUrls = DEFAULT_STUN_URLS,
+    turn = null, // { urls: string[], secret: string, ttlSeconds?: number }
+    heartbeatIntervalMs = HEARTBEAT_INTERVAL_MS,
+  } = {},
+) {
+  const wss = new WebSocketServer({
+    server,
+    maxPayload: MAX_PAYLOAD_BYTES,
+    // Browsers always send Origin, so this stops other websites from opening
+    // a socket to this server from their visitors' browsers. Empty list =
+    // allow all (local dev and tests).
+    verifyClient: ({ origin }) => allowedOrigins.length === 0 || allowedOrigins.includes(origin),
+  });
 
   // Map<roomId, Map<clientId, { ws, name }>> - exposed on the returned wss
   // purely so tests can inspect room state directly instead of only through
@@ -34,417 +104,501 @@ export function createSignalingServer(server, { roomGraceMs = 30000, secretKey }
   // grace period lets a lone reconnecting client still find its own room.
   const roomDeletionTimers = new Map();
 
-  // Map<token (UUID-v4), roomId> — permanent invite tokens (reusable).
+  // Map<token, roomId> - one reusable invite token per room, removed when
+  // the room itself is deleted.
   const inviteTokens = new Map();
 
-  // Map<roomId, clientId> — tracks the current owner of each room.
-  // Owner = first member; when they leave the next member in iteration order
-  // is promoted automatically.
+  // Map<roomId, clientId> - the current owner of each room. Owner = creator;
+  // when they leave the next member is promoted. A room left empty has no
+  // owner until someone rejoins it with a rejoin token.
   const roomOwners = new Map();
 
-  // Map<requestId, { ws, name, tempClientId, roomId }> — guests waiting to
-  // be admitted by the room owner.
+  // Map<requestId, { conn, name, roomId }> - guests waiting to be admitted.
   const pendingRequests = new Map();
 
-  // Helper: notify the current owner of a room, if there is one.
-  const notifyOwner = (roomId, payload) => {
-    const ownerId = roomOwners.get(roomId);
-    if (!ownerId) return;
-    const roomClients = rooms.get(roomId);
-    if (!roomClients) return;
-    const owner = roomClients.get(ownerId);
-    if (owner) owner.ws.send(JSON.stringify(payload));
+  // Map<token, roomId> - proof that a connection was already admitted to a
+  // room. Handed out with room-created / existing-peers and stored by the
+  // client, so a page reload can rejoin directly. Without one, the only way
+  // into a room is join-request -> admit by the owner.
+  const rejoinTokens = new Map();
+
+  // Map<ip, { count, resetAt }>
+  const failedLookups = new Map();
+
+  // Map<clientId, leaveCurrentRoom> - lets the admit flow (running on the
+  // owner's connection) make a guest leave whatever room it might still be
+  // in, using the guest's own closure.
+  const leaveFns = new Map();
+
+  const safeSend = (ws, payload) => {
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
   };
 
-  wss.on('connection', (ws, req) => {
-    // If a secretKey is configured, ensure the client provided it via query param or header
-    if (secretKey) {
-      const parsedUrl = new URL(req?.url || '/', 'http://localhost');
-      const providedKey =
-        parsedUrl.searchParams.get('secretKey') ||
-        parsedUrl.searchParams.get('secret') ||
-        req?.headers?.['x-secret-key'];
+  const iceServersFor = (clientId) => {
+    const servers = stunUrls.length > 0 ? [{ urls: stunUrls }] : [];
+    if (turn?.secret && turn.urls?.length) {
+      servers.push({ urls: turn.urls, ...turnCredentials(turn.secret, turn.ttlSeconds ?? 3600, clientId) });
+    }
+    return servers;
+  };
 
-      if (providedKey !== secretKey) {
-        console.warn(`Connection rejected: invalid or missing secret key`);
-        ws.send(
-          JSON.stringify({ type: 'error', message: 'Unauthorized: Invalid secret key' }),
-          () => {
-            try {
-              ws.close(4001, 'Unauthorized');
-            } catch {
-              // Ignore if already closed
-            }
-          },
-        );
-        return;
+  const notifyOwner = (roomId, payload) => {
+    const ownerId = roomOwners.get(roomId);
+    const owner = ownerId && rooms.get(roomId)?.get(ownerId);
+    if (owner) safeSend(owner.ws, payload);
+  };
+
+  const rejectPendingForRoom = (roomId, reason) => {
+    for (const [requestId, pending] of pendingRequests.entries()) {
+      if (pending.roomId === roomId) {
+        safeSend(pending.conn.ws, { type: 'join-rejected', reason });
+        pending.conn.pendingRequestId = null;
+        pendingRequests.delete(requestId);
       }
     }
+  };
 
-    const clientId = crypto.randomUUID();
-    let currentRoomId = null;
+  const deleteRoom = (roomId) => {
+    rooms.delete(roomId);
+    roomOwners.delete(roomId);
+    roomDeletionTimers.delete(roomId);
+    for (const [token, tokenRoomId] of inviteTokens.entries()) {
+      if (tokenRoomId === roomId) inviteTokens.delete(token);
+    }
+    for (const [token, tokenRoomId] of rejoinTokens.entries()) {
+      if (tokenRoomId === roomId) rejoinTokens.delete(token);
+    }
+    console.log(`Room ${roomId} deleted (empty)`);
+  };
 
-    const syncAdmittedRoom = () => {
-      if (ws.__admittedRoomId) {
-        currentRoomId = ws.__admittedRoomId;
-        delete ws.__admittedRoomId;
+  const cancelRoomDeletion = (roomId) => {
+    if (roomDeletionTimers.has(roomId)) {
+      clearTimeout(roomDeletionTimers.get(roomId));
+      roomDeletionTimers.delete(roomId);
+    }
+  };
+
+  const tooManyFailedLookups = (ip) => {
+    const entry = failedLookups.get(ip);
+    return Boolean(entry && entry.resetAt > Date.now() && entry.count >= MAX_FAILED_LOOKUPS);
+  };
+
+  const recordFailedLookup = (ip) => {
+    const now = Date.now();
+    const entry = failedLookups.get(ip);
+    if (!entry || entry.resetAt <= now) {
+      failedLookups.set(ip, { count: 1, resetAt: now + FAILED_LOOKUP_WINDOW_MS });
+    } else {
+      entry.count += 1;
+    }
+  };
+
+  // Ping every client; one that didn't answer the previous ping is a dead
+  // connection (closed laptop, lost mobile network) and is terminated, which
+  // runs the normal close cleanup instead of leaving a ghost in the room.
+  const heartbeat = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws.isAlive === false) {
+        ws.terminate();
+        return;
       }
+      ws.isAlive = false;
+      ws.ping();
+    });
+
+    const now = Date.now();
+    for (const [ip, entry] of failedLookups.entries()) {
+      if (entry.resetAt <= now) failedLookups.delete(ip);
+    }
+  }, heartbeatIntervalMs);
+  heartbeat.unref?.();
+  wss.on('close', () => clearInterval(heartbeat));
+
+  wss.on('connection', (ws, req) => {
+    const forwardedFor = trustProxy ? req?.headers?.['x-forwarded-for'] : undefined;
+    const ip = (forwardedFor?.split(',')[0] ?? req?.socket?.remoteAddress ?? 'unknown').trim();
+
+    // Per-connection state. Kept in one object so the admit flow (which runs
+    // on the owner's connection) can update the guest's connection directly.
+    const conn = {
+      ws,
+      clientId: crypto.randomUUID(),
+      roomId: null,
+      rejoinToken: null,
+      pendingRequestId: null,
+      tokens: MESSAGE_BURST,
+      lastRefill: Date.now(),
     };
+    const { clientId } = conn;
+
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+
+    // Protocol errors (e.g. a message over maxPayload) are emitted here and
+    // ws closes the socket itself. Without a listener the 'error' event would
+    // be thrown and take the whole process down.
+    ws.on('error', (err) => {
+      console.warn(`Connection error for ${conn.clientId}: ${err.message}`);
+    });
 
     console.log(`Client connected: ${clientId}`);
 
-    const send = (payload) => ws.send(JSON.stringify(payload));
+    const send = (payload) => safeSend(ws, payload);
 
-    // Shared by an explicit leave-room and a real disconnect: without this the
-    // server would keep thinking this client is in the room until the socket
-    // itself closes, which never happens for an explicit leave (the connection
-    // stays open so the same client can create/join another room next).
-    const leaveCurrentRoom = () => {
-      syncAdmittedRoom();
-      if (currentRoomId && rooms.has(currentRoomId)) {
-        const roomId = currentRoomId;
-        const roomClients = rooms.get(roomId);
-        roomClients.delete(clientId);
-
-        const isOwner = roomOwners.get(roomId) === clientId;
-
-        if (roomClients.size === 0) {
-          // Room is now empty — cancel any pending admit requests for it.
-          for (const [requestId, req] of pendingRequests.entries()) {
-            if (req.roomId === roomId) {
-              req.ws.send(JSON.stringify({ type: 'join-rejected', reason: 'The host left the room' }));
-              pendingRequests.delete(requestId);
-            }
-          }
-
-          roomOwners.delete(roomId);
-
-          // Delete invite tokens that pointed to this room.
-          for (const [token, tRoomId] of inviteTokens.entries()) {
-            if (tRoomId === roomId) inviteTokens.delete(token);
-          }
-
-          const timer = setTimeout(() => {
-            rooms.delete(roomId);
-            roomDeletionTimers.delete(roomId);
-            console.log(`Room ${roomId} deleted (empty)`);
-          }, roomGraceMs);
-          timer.unref?.();
-          roomDeletionTimers.set(roomId, timer);
-        } else {
-          // Notify remaining peers that this client left.
-          roomClients.forEach((member) => {
-            member.ws.send(JSON.stringify({ type: 'peer-left', clientId }));
-          });
-
-          if (isOwner) {
-            // Cancel all pending join requests for this room, notifying guests.
-            for (const [requestId, req] of pendingRequests.entries()) {
-              if (req.roomId === roomId) {
-                req.ws.send(JSON.stringify({ type: 'join-rejected', reason: 'The host left the room' }));
-                pendingRequests.delete(requestId);
-              }
-            }
-
-            // Promote the next member in iteration order to owner.
-            const [nextClientId] = roomClients.keys();
-            roomOwners.set(roomId, nextClientId);
-            roomClients.forEach((member) => {
-              member.ws.send(JSON.stringify({ type: 'owner-changed', newOwnerId: nextClientId }));
-            });
-            console.log(`Room ${roomId} owner changed to ${nextClientId}`);
-          }
-        }
-      }
-      currentRoomId = null;
+    const takeToken = () => {
+      const now = Date.now();
+      conn.tokens = Math.min(MESSAGE_BURST, conn.tokens + ((now - conn.lastRefill) / 1000) * MESSAGES_PER_SECOND);
+      conn.lastRefill = now;
+      if (conn.tokens < 1) return false;
+      conn.tokens -= 1;
+      return true;
     };
 
-    ws.on('message', (message) => {
-      syncAdmittedRoom();
-      try {
-        const parsedData = JSON.parse(message);
+    const cancelOwnPendingRequest = () => {
+      const requestId = conn.pendingRequestId;
+      if (!requestId) return;
+      const pending = pendingRequests.get(requestId);
+      pendingRequests.delete(requestId);
+      conn.pendingRequestId = null;
+      if (pending) notifyOwner(pending.roomId, { type: 'admit-request-cancelled', requestId });
+    };
 
-        if (parsedData.type === 'create-room') {
-          const roomId = crypto.randomUUID().slice(0, 6);
-          const name = cleanName(parsedData.name);
+    // Shared by an explicit leave-room, a disconnect, and switching rooms.
+    // An explicit leave also forgets the rejoin token; a disconnect keeps it
+    // so a page reload can come straight back.
+    const leaveCurrentRoom = ({ explicit }) => {
+      const roomId = conn.roomId;
+      conn.roomId = null;
+      if (explicit && conn.rejoinToken) rejoinTokens.delete(conn.rejoinToken);
+      conn.rejoinToken = null;
 
-          const roomClients = new Map();
-          roomClients.set(clientId, { ws, name });
-          rooms.set(roomId, roomClients);
-          currentRoomId = roomId;
+      const roomClients = roomId && rooms.get(roomId);
+      if (!roomClients) return;
 
-          // Creator is the initial owner.
-          roomOwners.set(roomId, clientId);
+      roomClients.delete(clientId);
+      const wasOwner = roomOwners.get(roomId) === clientId;
 
-          console.log(`Room created: ${roomId} by ${name} (${clientId})`);
+      if (roomClients.size === 0) {
+        rejectPendingForRoom(roomId, 'The host left the room');
+        roomOwners.delete(roomId);
 
-          send({ type: 'room-created', roomId, clientId, name, isOwner: true, ownerId: clientId });
+        const timer = setTimeout(() => deleteRoom(roomId), roomGraceMs);
+        timer.unref?.();
+        roomDeletionTimers.set(roomId, timer);
+        return;
+      }
+
+      roomClients.forEach((member) => safeSend(member.ws, { type: 'peer-left', clientId }));
+
+      if (wasOwner) {
+        rejectPendingForRoom(roomId, 'The host left the room');
+
+        const [nextClientId] = roomClients.keys();
+        roomOwners.set(roomId, nextClientId);
+        roomClients.forEach((member) => {
+          safeSend(member.ws, { type: 'owner-changed', newOwnerId: nextClientId });
+        });
+        console.log(`Room ${roomId} owner changed to ${nextClientId}`);
+      }
+    };
+
+    // The one path into a room, used by create, rejoin and admit alike.
+    const addMember = (target, roomId, name) => {
+      const roomClients = rooms.get(roomId);
+      cancelRoomDeletion(roomId);
+
+      const existingPeers = roster(roomClients, target.clientId);
+      const rejoinToken = crypto.randomUUID();
+      rejoinTokens.set(rejoinToken, roomId);
+
+      roomClients.set(target.clientId, { ws: target.ws, name });
+      target.roomId = roomId;
+      target.rejoinToken = rejoinToken;
+
+      // An empty room (everyone reloaded / left within the grace period)
+      // has no owner - whoever comes back first takes it over, so join
+      // requests always have someone to go to.
+      if (!roomOwners.has(roomId)) roomOwners.set(roomId, target.clientId);
+
+      return { existingPeers, rejoinToken };
+    };
+
+    const announceJoin = (target, roomId, name, existingPeers, rejoinToken) => {
+      safeSend(target.ws, {
+        type: 'existing-peers',
+        roomId,
+        clientId: target.clientId,
+        name,
+        peers: existingPeers,
+        ownerId: roomOwners.get(roomId),
+        rejoinToken,
+        iceServers: iceServersFor(target.clientId),
+      });
+
+      const roomClients = rooms.get(roomId);
+      existingPeers.forEach((peer) => {
+        safeSend(roomClients.get(peer.clientId).ws, {
+          type: 'peer-joined',
+          clientId: target.clientId,
+          name,
+        });
+      });
+    };
+
+    leaveFns.set(clientId, leaveCurrentRoom);
+
+    const handlers = {
+      'create-room': (data) => {
+        if (conn.roomId) leaveCurrentRoom({ explicit: true });
+        cancelOwnPendingRequest();
+
+        const roomId = generateRoomCode(rooms);
+        const name = cleanName(data.name);
+        rooms.set(roomId, new Map());
+        const { rejoinToken } = addMember(conn, roomId, name);
+
+        console.log(`Room created: ${roomId} (${clientId})`);
+        send({
+          type: 'room-created',
+          roomId,
+          clientId,
+          name,
+          isOwner: true,
+          ownerId: clientId,
+          rejoinToken,
+          iceServers: iceServersFor(clientId),
+        });
+      },
+
+      // Direct (re)join - only with a rejoin token from an earlier admission.
+      // Everyone else goes through join-request.
+      'join-room': (data) => {
+        if (tooManyFailedLookups(ip)) {
+          send({ type: 'error', message: 'Too many attempts. Please wait a minute and try again.' });
+          return;
         }
 
-        else if (parsedData.type === 'join-room') {
-          const roomId = parsedData.roomId;
-          const name = cleanName(parsedData.name);
-
-          if (!rooms.has(roomId)) {
-            send({ type: 'error', message: 'Room does not exist' });
-            return;
-          }
-
-          const roomClients = rooms.get(roomId);
-
-          if (roomClients.size >= MAX_ROOM_SIZE) {
-            send({ type: 'error', message: 'Room is full' });
-            return;
-          }
-
-          // The room was mid-way through its grace-period deletion (everyone
-          // had left) but someone just claimed it again - keep it alive.
-          if (roomDeletionTimers.has(roomId)) {
-            clearTimeout(roomDeletionTimers.get(roomId));
-            roomDeletionTimers.delete(roomId);
-          }
-
-          const existingPeers = roster(roomClients, clientId);
-
-          roomClients.set(clientId, { ws, name });
-          currentRoomId = roomId;
-
-          console.log(`${name} (${clientId}) joined room ${roomId}`);
-
-          send({
-            type: 'existing-peers',
-            roomId,
-            clientId,
-            name,
-            peers: existingPeers,
-            ownerId: roomOwners.get(roomId),
-          });
-
-          existingPeers.forEach((peer) => {
-            roomClients.get(peer.clientId).ws.send(
-              JSON.stringify({ type: 'peer-joined', clientId, name }),
-            );
-          });
+        const roomId = typeof data.roomId === 'string' ? data.roomId : '';
+        if (!rooms.has(roomId)) {
+          recordFailedLookup(ip);
+          send({ type: 'error', message: 'Room does not exist' });
+          return;
         }
 
-        else if (parsedData.type === 'create-invite') {
-          const roomId = parsedData.roomId;
+        const tokenRoomId = typeof data.rejoinToken === 'string' ? rejoinTokens.get(data.rejoinToken) : undefined;
+        if (tokenRoomId !== roomId) {
+          send({ type: 'error', message: 'Ask the host to let you in' });
+          return;
+        }
 
-          // Security check: client must actually be in that room.
-          if (!currentRoomId || currentRoomId !== roomId) {
-            send({ type: 'error', message: 'You are not in that room' });
-            return;
-          }
+        const roomClients = rooms.get(roomId);
+        if (roomClients.size >= MAX_ROOM_SIZE) {
+          send({ type: 'error', message: 'Room is full' });
+          return;
+        }
 
-          const token = crypto.randomUUID(); // full UUID-v4, permanent
+        if (conn.roomId) leaveCurrentRoom({ explicit: true });
+        cancelOwnPendingRequest();
+        rejoinTokens.delete(data.rejoinToken);
+
+        const name = cleanName(data.name);
+        const { existingPeers, rejoinToken } = addMember(conn, roomId, name);
+        console.log(`${clientId} rejoined room ${roomId}`);
+        announceJoin(conn, roomId, name, existingPeers, rejoinToken);
+      },
+
+      'create-invite': (data) => {
+        const roomId = data.roomId;
+        if (!conn.roomId || conn.roomId !== roomId) {
+          send({ type: 'error', message: 'You are not in that room' });
+          return;
+        }
+
+        // One reusable token per room, so spamming create-invite can't grow
+        // the map without bound.
+        let token = [...inviteTokens.entries()].find(([, tokenRoomId]) => tokenRoomId === roomId)?.[0];
+        if (!token) {
+          token = crypto.randomUUID();
           inviteTokens.set(token, roomId);
+        }
+        send({ type: 'invite-created', token, roomId });
+      },
 
-          console.log(`Invite token created for room ${roomId}`);
-          send({ type: 'invite-created', token, roomId });
+      'resolve-invite': (data) => {
+        if (tooManyFailedLookups(ip)) {
+          send({ type: 'error', message: 'Too many attempts. Please wait a minute and try again.' });
+          return;
         }
 
-        else if (parsedData.type === 'resolve-invite') {
-          const token = parsedData.token;
-          const roomId = inviteTokens.get(token);
+        const roomId = typeof data.token === 'string' ? inviteTokens.get(data.token) : undefined;
+        if (!roomId) {
+          recordFailedLookup(ip);
+          send({ type: 'error', message: 'Invalid or expired invite link' });
+          return;
+        }
+        send({ type: 'invite-resolved', roomId });
+      },
 
-          if (!roomId) {
-            send({ type: 'error', message: 'Invalid or expired invite link' });
-            return;
-          }
-
-          send({ type: 'invite-resolved', roomId });
+      'join-request': (data) => {
+        if (tooManyFailedLookups(ip)) {
+          send({ type: 'error', message: 'Too many attempts. Please wait a minute and try again.' });
+          return;
         }
 
-        else if (parsedData.type === 'join-request') {
-          const roomId = parsedData.roomId;
-          const name = cleanName(parsedData.name);
+        const roomId = typeof data.roomId === 'string' ? data.roomId : '';
+        const name = cleanName(data.name);
 
-          if (!rooms.has(roomId)) {
-            send({ type: 'error', message: 'Room does not exist' });
-            return;
-          }
+        if (!rooms.has(roomId)) {
+          recordFailedLookup(ip);
+          send({ type: 'error', message: 'Room does not exist' });
+          return;
+        }
+        if (conn.roomId === roomId) return;
 
-          const roomClients = rooms.get(roomId);
-
-          if (roomClients.size >= MAX_ROOM_SIZE) {
-            send({ type: 'error', message: 'Room is full' });
-            return;
-          }
-
-          const requestId = crypto.randomUUID();
-          const tempClientId = clientId; // reuse this connection's clientId as tempClientId
-
-          pendingRequests.set(requestId, { ws, name, tempClientId, roomId });
-
-          // Tell the guest they are waiting.
-          send({ type: 'waiting', requestId });
-
-          // Tell the owner about the pending request.
-          notifyOwner(roomId, { type: 'admit-request', requestId, name, clientId: tempClientId });
-
-          console.log(`Join request ${requestId} from ${name} for room ${roomId}`);
+        if (rooms.get(roomId).size >= MAX_ROOM_SIZE) {
+          send({ type: 'error', message: 'Room is full' });
+          return;
+        }
+        if (!roomOwners.has(roomId)) {
+          send({ type: 'error', message: 'The host is not in the room right now' });
+          return;
         }
 
-        else if (parsedData.type === 'admit-response') {
-          const { requestId, admitted } = parsedData;
-          const pending = pendingRequests.get(requestId);
+        // One outstanding request per connection - a second one replaces the
+        // first instead of leaving an orphan that could later be admitted.
+        cancelOwnPendingRequest();
 
-          if (!pending) {
-            // Request no longer exists (guest disconnected, etc.) — ignore silently.
-            return;
-          }
+        const requestId = crypto.randomUUID();
+        pendingRequests.set(requestId, { conn, name, roomId });
+        conn.pendingRequestId = requestId;
 
-          if (admitted) {
-            // Check room still has space (edge case: someone else joined).
-            const roomId = pending.roomId;
-            const roomClients = rooms.get(roomId);
+        send({ type: 'waiting', requestId });
+        notifyOwner(roomId, { type: 'admit-request', requestId, name, clientId });
+        console.log(`Join request ${requestId} for room ${roomId}`);
+      },
 
-            if (!roomClients || roomClients.size >= MAX_ROOM_SIZE) {
-              // Can't admit — room full or gone. Reject the guest.
-              pending.ws.send(JSON.stringify({ type: 'join-rejected', reason: 'Room is no longer available' }));
-              pendingRequests.delete(requestId);
-              return;
-            }
+      'admit-response': (data) => {
+        const pending = pendingRequests.get(data.requestId);
+        if (!pending) return;
 
-            // Admit the guest — follow exact same logic as join-room.
-            const guestWs = pending.ws;
-            const guestName = pending.name;
-            const guestClientId = pending.tempClientId;
+        // Only the current owner of that room may decide.
+        if (roomOwners.get(pending.roomId) !== clientId || conn.roomId !== pending.roomId) return;
 
-            // Cancel deletion timer if any.
-            if (roomDeletionTimers.has(roomId)) {
-              clearTimeout(roomDeletionTimers.get(roomId));
-              roomDeletionTimers.delete(roomId);
-            }
+        pendingRequests.delete(data.requestId);
+        const guest = pending.conn;
+        guest.pendingRequestId = null;
 
-            const existingPeers = roster(roomClients, guestClientId);
-            roomClients.set(guestClientId, { ws: guestWs, name: guestName });
+        if (guest.ws.readyState !== guest.ws.OPEN) return;
 
-            // We need to update the guest ws's currentRoomId — we do this by
-            // sending a message and the guest's own connection handler will
-            // pick it up. But we can't reach into the other connection's
-            // closure. Instead, the guest's ws.on('message') won't run here.
-            // The correct approach: the guest connection already has its own
-            // clientId in scope; we just track that this guestWs now belongs
-            // to roomId by updating via the pending entry. We'll attach the
-            // roomId tracking on the guestWs object itself.
-            guestWs.__admittedRoomId = roomId;
-
-            console.log(`${guestName} (${guestClientId}) admitted to room ${roomId}`);
-
-            // Send existing-peers to the guest.
-            guestWs.send(JSON.stringify({
-              type: 'existing-peers',
-              roomId,
-              clientId: guestClientId,
-              name: guestName,
-              peers: existingPeers,
-              ownerId: roomOwners.get(roomId),
-            }));
-
-            // Notify existing peers that the guest joined.
-            existingPeers.forEach((peer) => {
-              roomClients.get(peer.clientId).ws.send(
-                JSON.stringify({ type: 'peer-joined', clientId: guestClientId, name: guestName }),
-              );
-            });
-
-            pendingRequests.delete(requestId);
-          } else {
-            // Rejected.
-            pending.ws.send(JSON.stringify({ type: 'join-rejected', reason: 'The host declined your request' }));
-            pendingRequests.delete(requestId);
-          }
+        if (!data.admitted) {
+          safeSend(guest.ws, { type: 'join-rejected', reason: 'The host declined your request' });
+          return;
         }
 
-        else if (parsedData.type === 'cancel-join-request') {
-          const { requestId } = parsedData;
-          const pending = pendingRequests.get(requestId);
-
-          if (!pending) return;
-
-          const roomId = pending.roomId;
-          pendingRequests.delete(requestId);
-
-          // Notify the owner that the request was cancelled.
-          notifyOwner(roomId, { type: 'admit-request-cancelled', requestId });
+        const roomClients = rooms.get(pending.roomId);
+        if (!roomClients || roomClients.size >= MAX_ROOM_SIZE) {
+          safeSend(guest.ws, { type: 'join-rejected', reason: 'Room is no longer available' });
+          return;
         }
 
-        else if (['offer', 'answer', 'ice-candidate'].includes(parsedData.type)) {
-          if (currentRoomId && rooms.has(currentRoomId)) {
-            const roomClients = rooms.get(currentRoomId);
-            const target = roomClients.get(parsedData.targetId);
+        if (guest.roomId) leaveFns.get(guest.clientId)?.({ explicit: true });
 
-            if (target) {
-              // The server knows who is on this connection, so it stamps the
-              // sender itself rather than trusting the client's own claim.
-              target.ws.send(JSON.stringify({ ...parsedData, senderId: clientId }));
-            }
-          }
-        }
+        const { existingPeers, rejoinToken } = addMember(guest, pending.roomId, pending.name);
+        console.log(`${guest.clientId} admitted to room ${pending.roomId}`);
+        announceJoin(guest, pending.roomId, pending.name, existingPeers, rejoinToken);
+      },
 
-        else if (parsedData.type === 'media-state') {
-          if (currentRoomId && rooms.has(currentRoomId)) {
-            const roomClients = rooms.get(currentRoomId);
+      'cancel-join-request': (data) => {
+        if (data.requestId === conn.pendingRequestId) cancelOwnPendingRequest();
+      },
 
-            roomClients.forEach((member, peerId) => {
-              if (peerId !== clientId) {
-                member.ws.send(
-                  JSON.stringify({
-                    type: 'media-state',
-                    from: clientId,
-                    cameraOn: Boolean(parsedData.cameraOn),
-                    micOn: Boolean(parsedData.micOn),
-                    screenSharing: Boolean(parsedData.screenSharing),
-                  }),
-                );
-              }
-            });
-          }
-        }
+      // offer / answer / ice-candidate: relayed to exactly one member of the
+      // same room. Only known fields are forwarded, and senderId is always
+      // the server's own idea of who this connection is.
+      relay: (data) => {
+        const target = conn.roomId && rooms.get(conn.roomId)?.get(data.targetId);
+        if (!target || !isPlainObject(data.payload)) return;
+        safeSend(target.ws, {
+          type: data.type,
+          targetId: data.targetId,
+          senderId: clientId,
+          payload: data.payload,
+        });
+      },
 
-        else if (parsedData.type === 'leave-room') {
-          leaveCurrentRoom();
-        }
+      'media-state': (data) => {
+        const roomClients = conn.roomId && rooms.get(conn.roomId);
+        if (!roomClients) return;
 
-        else if (parsedData.type === 'chat-message') {
-          if (currentRoomId && rooms.has(currentRoomId)) {
-            const roomClients = rooms.get(currentRoomId);
-            const sender = roomClients.get(clientId);
+        const state = {
+          type: 'media-state',
+          from: clientId,
+          cameraOn: Boolean(data.cameraOn),
+          micOn: Boolean(data.micOn),
+          screenSharing: Boolean(data.screenSharing),
+          cameraStreamId: cleanStreamId(data.cameraStreamId),
+          screenStreamId: cleanStreamId(data.screenStreamId),
+        };
+        roomClients.forEach((member, peerId) => {
+          if (peerId !== clientId) safeSend(member.ws, state);
+        });
+      },
 
-            roomClients.forEach((member, peerId) => {
-              if (peerId !== clientId) {
-                member.ws.send(
-                  JSON.stringify({
-                    ...parsedData,
-                    from: clientId,
-                    fromName: sender?.name ?? 'Guest',
-                  }),
-                );
-              }
-            });
-          }
-        }
+      'leave-room': () => {
+        cancelOwnPendingRequest();
+        leaveCurrentRoom({ explicit: true });
+      },
 
+      'chat-message': (data) => {
+        const roomClients = conn.roomId && rooms.get(conn.roomId);
+        if (!roomClients || typeof data.text !== 'string') return;
+
+        const text = data.text.trim().slice(0, MAX_CHAT_LENGTH);
+        if (!text) return;
+
+        const message = {
+          type: 'chat-message',
+          from: clientId,
+          fromName: roomClients.get(clientId)?.name ?? 'Guest',
+          text,
+        };
+        roomClients.forEach((member, peerId) => {
+          if (peerId !== clientId) safeSend(member.ws, message);
+        });
+      },
+    };
+    handlers.offer = handlers.relay;
+    handlers.answer = handlers.relay;
+    handlers['ice-candidate'] = handlers.relay;
+
+    ws.on('message', (message) => {
+      if (!takeToken()) return;
+
+      let data;
+      try {
+        data = JSON.parse(message);
+      } catch {
+        return; // Malformed input from one client must not take anything down.
+      }
+      if (!isPlainObject(data) || data.type === 'relay') return;
+
+      const handler = Object.hasOwn(handlers, data.type) ? handlers[data.type] : undefined;
+      if (!handler) return;
+
+      try {
+        handler(data);
       } catch (err) {
-        // Malformed input from one client must not take the process down.
+        console.error(`Failed handling ${data.type}:`, err);
       }
     });
 
     ws.on('close', () => {
       console.log(`Client disconnected: ${clientId}`);
-
-      // If this ws belongs to a guest waiting in a pending request, cancel it.
-      for (const [requestId, req] of pendingRequests.entries()) {
-        if (req.ws === ws) {
-          const roomId = req.roomId;
-          pendingRequests.delete(requestId);
-          notifyOwner(roomId, { type: 'admit-request-cancelled', requestId });
-          break;
-        }
-      }
-
-      leaveCurrentRoom();
+      cancelOwnPendingRequest();
+      leaveCurrentRoom({ explicit: false });
+      leaveFns.delete(clientId);
     });
   });
 

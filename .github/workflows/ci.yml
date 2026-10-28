@@ -140,11 +140,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: SSH into EC2 and update app
-        uses: appleboy/ssh-action@v1.0.3
+        # Pinned to the commit behind v1.0.3, not the tag: a tag can be moved
+        # to different code later, a commit SHA can't.
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          # SHA256 host key fingerprint of the server (ssh-keyscan + ssh-keygen -lf).
+          # Without it the deploy would trust whatever machine answers.
+          fingerprint: ${{ secrets.EC2_HOST_FINGERPRINT }}
           port: 22
           script_stop: true
           script: |
@@ -153,20 +158,28 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
-            # NVM / Node muhitini yuklash (mavjud bo'lmasa ham xato bermasligi uchun || true)
+            # Load the NVM / Node environment (|| true so a missing nvm isn't an error)
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || true
             export PATH="$PATH:/usr/local/bin:/usr/bin"
 
             cd client
-            npm i
+            # ci, not install: exactly what package-lock.json says, nothing newer.
+            npm ci
             npm run build
-            sudo mkdir -p /var/www/meet-me-frontend
-            sudo rm -rf /var/www/meet-me-frontend/*
-            sudo cp -r dist/* /var/www/meet-me-frontend/
+
+            # Copy the new build next to the live one, then swap directories,
+            # so the site is never served from a half-empty folder.
+            sudo rm -rf /var/www/meet-me-frontend.new /var/www/meet-me-frontend.old
+            sudo cp -r dist /var/www/meet-me-frontend.new
+            if [ -d /var/www/meet-me-frontend ]; then
+              sudo mv /var/www/meet-me-frontend /var/www/meet-me-frontend.old
+            fi
+            sudo mv /var/www/meet-me-frontend.new /var/www/meet-me-frontend
+            sudo rm -rf /var/www/meet-me-frontend.old
             cd ..
 
             docker compose up -d --build
 
+            sudo nginx -t
             sudo systemctl reload nginx
-

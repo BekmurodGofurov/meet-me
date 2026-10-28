@@ -30,8 +30,16 @@ export default defineConfig({
         // track without needing actual hardware; fake-ui auto-grants the
         // permission prompt instead of it hanging forever waiting for a
         // human to click "Allow".
+        // WebRtcHideLocalIpsWithMdns off: both browsers run on this one
+        // machine, and their only direct path is the local IP. By default
+        // Chrome hides it behind a random .local name, which doesn't resolve
+        // on every machine/CI runner - the call then has no working path.
         launchOptions: {
-          args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+          args: [
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+            '--disable-features=WebRtcHideLocalIpsWithMdns',
+          ],
         },
       },
     },
@@ -44,14 +52,14 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       // Short so the "genuinely stale room" test doesn't need to wait out
       // the real 10s production grace period - the tests know this value.
-      env: { E2E: '1', ROOM_GRACE_MS: '1500', SECRET_KEY: 'test-secret-key' },
+      env: { E2E: '1', ROOM_GRACE_MS: '1500' },
     },
     {
       command: `npm run dev -- --port ${FRONTEND_PORT}`,
       cwd: '../client',
       port: FRONTEND_PORT,
       reuseExistingServer: !process.env.CI,
-      env: { E2E: '1', VITE_SECRET_KEY: 'test-secret-key' },
+      env: { E2E: '1' },
     },
   ],
 })

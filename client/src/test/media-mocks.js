@@ -8,6 +8,7 @@ import { vi } from 'vitest'
 export class FakeMediaStreamTrack {
   constructor(kind) {
     this.kind = kind
+    this.contentHint = ''
     this.id = `${kind}-${Math.random().toString(36).slice(2)}`
     this.stop = vi.fn()
   }
@@ -15,6 +16,7 @@ export class FakeMediaStreamTrack {
 
 export class FakeMediaStream {
   constructor(tracks = []) {
+    this.id = `stream-${Math.random().toString(36).slice(2)}`
     this._tracks = [...tracks]
   }
 

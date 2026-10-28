@@ -77,18 +77,30 @@ async function createRoom(name = 'Owner') {
   return { ws, created };
 }
 
-// notifyTargets: existing members who will receive (and here, consume) the
-// peer-joined notification this join triggers - without draining it, it
-// sits in that socket's queue ahead of whatever the test checks next.
-async function joinRoom(roomId, name, notifyTargets = []) {
+// Joins the way a real guest does: join-request -> owner admits. members is
+// everyone already in the room, owner first; each of them receives (and here
+// consumes) the peer-joined this triggers - without draining it, it would sit
+// in that socket's queue ahead of whatever the test checks next.
+async function joinRoom(roomId, name, members) {
+  const [ownerWs] = members;
   const ws = await connect();
-  const notifications = notifyTargets.map((target) => nextMessage(target));
 
-  send(ws, { type: 'join-room', roomId, name });
+  send(ws, { type: 'join-request', roomId, name });
+  const waiting = await nextMessage(ws);
+  assert.equal(waiting.type, 'waiting');
+  const request = await nextMessage(ownerWs);
+  assert.equal(request.type, 'admit-request');
+
+  const notifications = members.map((member) => nextMessage(member));
+  send(ownerWs, { type: 'admit-response', requestId: request.requestId, admitted: true });
   const joined = await nextMessage(ws);
   const peerJoinedMessages = await Promise.all(notifications);
 
   return { ws, joined, peerJoinedMessages };
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe('create-room', () => {
@@ -96,7 +108,9 @@ describe('create-room', () => {
     const { created } = await createRoom('  Bekmurod  ');
 
     assert.equal(created.type, 'room-created');
-    assert.match(created.roomId, /^[0-9a-f]{6}$/);
+    assert.match(created.roomId, /^[a-z0-9]{6}$/);
+    assert.ok(created.rejoinToken);
+    assert.ok(Array.isArray(created.iceServers));
     assert.ok(created.clientId);
     assert.equal(created.name, 'Bekmurod');
   });
@@ -120,21 +134,22 @@ describe('create-room', () => {
   });
 });
 
-describe('join-room', () => {
-  test('joining client receives existing-peers with the room and their own identity', async () => {
-    const { created } = await createRoom('Owner');
-    const { joined } = await joinRoom(created.roomId, 'Member');
+describe('joining a room', () => {
+  test('admitted guest receives existing-peers with the room and their own identity', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { joined } = await joinRoom(created.roomId, 'Member', [ownerWs]);
 
     assert.equal(joined.type, 'existing-peers');
     assert.equal(joined.roomId, created.roomId);
     assert.equal(joined.name, 'Member');
     assert.ok(joined.clientId);
+    assert.ok(joined.rejoinToken);
     assert.notEqual(joined.clientId, created.clientId);
   });
 
   test('peers list contains the existing member as {clientId, name}, not a bare id', async () => {
-    const { created } = await createRoom('Owner');
-    const { joined } = await joinRoom(created.roomId, 'Member');
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { joined } = await joinRoom(created.roomId, 'Member', [ownerWs]);
 
     assert.deepEqual(joined.peers, [{ clientId: created.clientId, name: 'Owner' }]);
   });
@@ -148,9 +163,9 @@ describe('join-room', () => {
     assert.equal(peerJoinedMessages[0].name, 'Member');
   });
 
-  test('joining a room that does not exist returns an error, not a crash', async () => {
+  test('asking to join a room that does not exist returns an error, not a crash', async () => {
     const ws = await connect();
-    send(ws, { type: 'join-room', roomId: 'nope00', name: 'Ghost' });
+    send(ws, { type: 'join-request', roomId: 'nope00', name: 'Ghost' });
 
     const response = await nextMessage(ws);
     assert.equal(response.type, 'error');
@@ -167,11 +182,61 @@ describe('join-room', () => {
     }
 
     const ws = await connect();
-    send(ws, { type: 'join-room', roomId: created.roomId, name: 'Member 7' });
+    send(ws, { type: 'join-request', roomId: created.roomId, name: 'Member 7' });
     const response = await nextMessage(ws);
 
     assert.equal(response.type, 'error');
     assert.match(response.message, /full/i);
+  });
+
+  test('join-room without a rejoin token cannot skip the waiting room', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+
+    const intruder = await connect();
+    send(intruder, { type: 'join-room', roomId: created.roomId, name: 'Intruder' });
+    const response = await nextMessage(intruder);
+
+    assert.equal(response.type, 'error');
+    assert.equal(wss.rooms.get(created.roomId).size, 1);
+    await wait(50);
+    assert.equal(ownerWs.inbox.length, 0);
+  });
+
+  test("join-room with another room's token is rejected", async () => {
+    const { created: roomA } = await createRoom('A');
+    const { created: roomB } = await createRoom('B');
+
+    const ws = await connect();
+    send(ws, { type: 'join-room', roomId: roomB.roomId, rejoinToken: roomA.rejoinToken, name: 'X' });
+    const response = await nextMessage(ws);
+
+    assert.equal(response.type, 'error');
+  });
+
+  test('creating a room while in another one leaves the old room properly', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs, joined } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+
+    send(memberWs, { type: 'create-room', name: 'Member' });
+    const left = await nextMessage(ownerWs);
+
+    assert.equal(left.type, 'peer-left');
+    assert.equal(left.clientId, joined.clientId);
+    assert.equal(wss.rooms.get(created.roomId).has(joined.clientId), false);
+  });
+
+  test('repeated failed lookups from one address are rate limited', async () => {
+    const ws = await connect();
+    for (let i = 0; i < 20; i += 1) {
+      send(ws, { type: 'join-request', roomId: `zz${String(i).padStart(4, '0')}`, name: 'Guesser' });
+      const response = await nextMessage(ws);
+      assert.match(response.message, /does not exist/i);
+    }
+
+    const { created } = await createRoom('Owner');
+    send(ws, { type: 'join-request', roomId: created.roomId, name: 'Guesser' });
+    const response = await nextMessage(ws);
+    assert.match(response.message, /too many attempts/i);
   });
 });
 
@@ -225,6 +290,28 @@ describe('offer / answer / ice-candidate relay', () => {
   });
 });
 
+describe('relay validation', () => {
+  test('a relay with a non-object payload is dropped', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+
+    send(memberWs, { type: 'offer', targetId: created.clientId, payload: 'not an object' });
+    send(memberWs, { type: 'offer', targetId: created.clientId, payload: { sdp: 'real' }, extra: 'x' });
+
+    const offer = await nextMessage(ownerWs);
+    assert.deepEqual(offer.payload, { sdp: 'real' });
+    assert.equal(offer.extra, undefined);
+  });
+
+  test('messages larger than the payload limit close the connection', async () => {
+    const ws = await connect();
+    const closed = new Promise((resolve) => ws.on('close', (code) => resolve(code)));
+    send(ws, { type: 'chat-message', text: 'x'.repeat(200 * 1024) });
+
+    assert.equal(await closed, 1009);
+  });
+});
+
 describe('chat-message', () => {
   test('is relayed to everyone else in the room, with server-stamped identity', async () => {
     const { ws: ownerWs, created } = await createRoom('Owner');
@@ -249,6 +336,18 @@ describe('chat-message', () => {
     // Nothing should have arrived and queued for the sender.
     assert.equal(ownerWs.inbox.length, 0);
   });
+
+  test('non-string text is dropped and long text is capped at 500 characters', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+
+    send(ownerWs, { type: 'chat-message', text: { evil: true } });
+    send(ownerWs, { type: 'chat-message', text: 'y'.repeat(2000), extra: 'x' });
+
+    const chat = await nextMessage(memberWs);
+    assert.equal(chat.text.length, 500);
+    assert.equal(chat.extra, undefined);
+  });
 });
 
 describe('media-state', () => {
@@ -264,6 +363,22 @@ describe('media-state', () => {
     assert.equal(state.cameraOn, true);
     assert.equal(state.micOn, false);
     assert.notEqual(state.from, 'SPOOF');
+  });
+
+  test('stream ids are forwarded so peers can tell camera from screen', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+
+    send(memberWs, {
+      type: 'media-state',
+      screenSharing: true,
+      cameraStreamId: 'cam-1',
+      screenStreamId: 'x'.repeat(500),
+    });
+
+    const state = await nextMessage(ownerWs);
+    assert.equal(state.cameraStreamId, 'cam-1');
+    assert.equal(state.screenStreamId, null);
   });
 });
 
@@ -296,42 +411,67 @@ describe('leave-room', () => {
 
   test('an empty room is removed after its grace period - a stale room code is then rejected', async () => {
     const { ws: ownerWs, created } = await createRoom('Owner');
-    send(ownerWs, { type: 'leave-room' });
-    await new Promise((resolve) => setTimeout(resolve, ROOM_GRACE_MS + 50));
+    ownerWs.close();
+    await wait(ROOM_GRACE_MS + 50);
 
     const ws = await connect();
-    send(ws, { type: 'join-room', roomId: created.roomId, name: 'Late' });
+    send(ws, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Owner' });
     const response = await nextMessage(ws);
 
     assert.equal(response.type, 'error');
+    assert.match(response.message, /does not exist/i);
   });
 
-  test('rejoining within the grace period succeeds instead of "room does not exist"', async () => {
-    // This is exactly the shape of a page reload: the old connection leaves
-    // (or disconnects) and a new one asks to join the same room moments
-    // later - without a grace period this always lost the race and made
-    // "refresh keeps you in the room" not actually work for a lone user.
+  test('a reload (disconnect + rejoin with token) within the grace period keeps the room and the owner role', async () => {
+    // This is exactly the shape of a page reload: the old connection drops
+    // and a new one rejoins moments later. Without the grace period the room
+    // would already be gone; without the owner restore, nobody could admit
+    // guests afterwards.
     const { ws: ownerWs, created } = await createRoom('Owner');
-    send(ownerWs, { type: 'leave-room' });
+    ownerWs.close();
+    await wait(20);
 
     const ws = await connect();
-    send(ws, { type: 'join-room', roomId: created.roomId, name: 'Owner' });
+    send(ws, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Owner' });
     const response = await nextMessage(ws);
 
     assert.equal(response.type, 'existing-peers');
     assert.equal(response.roomId, created.roomId);
+    assert.equal(response.ownerId, response.clientId);
+    assert.ok(response.rejoinToken);
+    assert.notEqual(response.rejoinToken, created.rejoinToken);
+
+    const guest = await connect();
+    send(guest, { type: 'join-request', roomId: created.roomId, name: 'Guest' });
+    await nextMessage(guest);
+    const request = await nextMessage(ws);
+    assert.equal(request.type, 'admit-request');
   });
 
-  test('a disconnect (not just an explicit leave-room) also gets the same grace period', async () => {
+  test('a rejoin token works only once', async () => {
     const { ws: ownerWs, created } = await createRoom('Owner');
     ownerWs.close();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await wait(20);
+
+    const first = await connect();
+    send(first, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Owner' });
+    assert.equal((await nextMessage(first)).type, 'existing-peers');
+
+    const second = await connect();
+    send(second, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Copy' });
+    assert.equal((await nextMessage(second)).type, 'error');
+  });
+
+  test('an explicit leave-room forgets the rejoin token', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    send(ownerWs, { type: 'leave-room' });
+    await wait(20);
 
     const ws = await connect();
-    send(ws, { type: 'join-room', roomId: created.roomId, name: 'Owner' });
+    send(ws, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Owner' });
     const response = await nextMessage(ws);
 
-    assert.equal(response.type, 'existing-peers');
+    assert.equal(response.type, 'error');
   });
 });
 
@@ -369,61 +509,101 @@ describe('malformed input', () => {
   });
 });
 
-describe('secretKey authentication', () => {
-  let authServer;
-  let authWss;
-  let authUrl;
-  const TEST_SECRET = 'secret-123';
+describe('origin allowlist', () => {
+  let originServer;
+  let originWss;
+  let originUrl;
 
   beforeEach(async () => {
-    authServer = createServer();
-    authWss = createSignalingServer(authServer, { secretKey: TEST_SECRET });
-    await new Promise((resolve) => authServer.listen(0, resolve));
-    const { port } = authServer.address();
-    authUrl = `ws://localhost:${port}`;
+    originServer = createServer();
+    originWss = createSignalingServer(originServer, { allowedOrigins: ['https://meet.example'] });
+    await new Promise((resolve) => originServer.listen(0, resolve));
+    originUrl = `ws://localhost:${originServer.address().port}`;
   });
 
   afterEach(async () => {
-    authWss.clients.forEach((client) => client.terminate());
-    await new Promise((resolve) => authServer.close(resolve));
+    originWss.clients.forEach((client) => client.terminate());
+    await new Promise((resolve) => originWss.close(resolve));
+    await new Promise((resolve) => originServer.close(resolve));
   });
 
-  test('rejects connection if secret key is missing', async () => {
-    const ws = new WebSocket(authUrl);
-    const message = await new Promise((resolve) => {
-      ws.on('message', (data) => resolve(JSON.parse(data.toString())));
+  test('rejects a connection from another website', async () => {
+    const ws = new WebSocket(originUrl, { origin: 'https://evil.example' });
+    const result = await new Promise((resolve) => {
+      ws.on('open', () => resolve('open'));
+      ws.on('error', () => resolve('rejected'));
     });
-    assert.equal(message.type, 'error');
-    assert.match(message.message, /secret key/i);
-
-    const closeCode = await new Promise((resolve) => {
-      ws.on('close', (code) => resolve(code));
-    });
-    assert.equal(closeCode, 4001);
+    assert.equal(result, 'rejected');
   });
 
-  test('rejects connection if secret key is wrong', async () => {
-    const ws = new WebSocket(`${authUrl}?secretKey=wrong-key`);
-    const message = await new Promise((resolve) => {
-      ws.on('message', (data) => resolve(JSON.parse(data.toString())));
-    });
-    assert.equal(message.type, 'error');
-    assert.match(message.message, /secret key/i);
-  });
-
-  test('accepts connection if secret key matches', async () => {
-    const ws = new WebSocket(`${authUrl}?secretKey=${TEST_SECRET}`);
+  test('accepts a connection from the allowed origin', async () => {
+    const ws = new WebSocket(originUrl, { origin: 'https://meet.example' });
     await new Promise((resolve, reject) => {
       ws.on('open', resolve);
       ws.on('error', reject);
     });
-
-    send(ws, { type: 'create-room', name: 'Authorized' });
-    const response = await new Promise((resolve) => {
-      ws.on('message', (data) => resolve(JSON.parse(data.toString())));
-    });
-    assert.equal(response.type, 'room-created');
     ws.close();
+  });
+});
+
+describe('heartbeat', () => {
+  test('a client that stops answering pings is removed from its room', async () => {
+    const hbServer = createServer();
+    const hbWss = createSignalingServer(hbServer, { roomGraceMs: ROOM_GRACE_MS, heartbeatIntervalMs: 50 });
+    await new Promise((resolve) => hbServer.listen(0, resolve));
+    const url = `ws://localhost:${hbServer.address().port}`;
+
+    const owner = new WebSocket(url);
+    const dead = new WebSocket(url, { autoPong: false });
+    await Promise.all([owner, dead].map((ws) => new Promise((resolve) => ws.on('open', resolve))));
+
+    const ownerInbox = [];
+    owner.on('message', (raw) => ownerInbox.push(JSON.parse(raw)));
+    owner.send(JSON.stringify({ type: 'create-room', name: 'Owner' }));
+    await wait(30);
+    const created = ownerInbox.shift();
+
+    const deadInbox = [];
+    dead.on('message', (raw) => deadInbox.push(JSON.parse(raw)));
+    dead.send(JSON.stringify({ type: 'join-request', roomId: created.roomId, name: 'Dead' }));
+    await wait(30);
+    const request = ownerInbox.shift();
+    owner.send(JSON.stringify({ type: 'admit-response', requestId: request.requestId, admitted: true }));
+    await wait(30);
+    assert.equal(hbWss.rooms.get(created.roomId).size, 2);
+
+    await wait(200);
+    assert.equal(hbWss.rooms.get(created.roomId).size, 1);
+    assert.ok(ownerInbox.some((m) => m.type === 'peer-left'));
+
+    owner.terminate();
+    await new Promise((resolve) => hbWss.close(resolve));
+    await new Promise((resolve) => hbServer.close(resolve));
+  });
+});
+
+describe('ice servers', () => {
+  test('TURN credentials are short-lived HMACs, never the shared secret', async () => {
+    const turnServer = createServer();
+    const turnWss = createSignalingServer(turnServer, {
+      turn: { urls: ['turn:turn.example:3478'], secret: 'shared-secret', ttlSeconds: 600 },
+    });
+    await new Promise((resolve) => turnServer.listen(0, resolve));
+
+    const ws = new WebSocket(`ws://localhost:${turnServer.address().port}`);
+    await new Promise((resolve) => ws.on('open', resolve));
+    ws.send(JSON.stringify({ type: 'create-room', name: 'Owner' }));
+    const created = await new Promise((resolve) => ws.on('message', (raw) => resolve(JSON.parse(raw))));
+
+    const turnEntry = created.iceServers.find((server) => String(server.urls).includes('turn:'));
+    assert.ok(turnEntry);
+    const expiry = Number(turnEntry.username.split(':')[0]);
+    assert.ok(expiry > Date.now() / 1000 && expiry <= Date.now() / 1000 + 601);
+    assert.notEqual(turnEntry.credential, 'shared-secret');
+
+    ws.terminate();
+    await new Promise((resolve) => turnWss.close(resolve));
+    await new Promise((resolve) => turnServer.close(resolve));
   });
 });
 
@@ -436,6 +616,16 @@ describe('invite tokens', () => {
     assert.equal(res.type, 'invite-created');
     assert.equal(res.roomId, created.roomId);
     assert.match(res.token, /^[0-9a-f-]{36}$/); // uuid v4
+  });
+
+  test('asking again returns the same token instead of creating new ones', async () => {
+    const { ws, created } = await createRoom('Owner');
+    send(ws, { type: 'create-invite', roomId: created.roomId });
+    const first = await nextMessage(ws);
+    send(ws, { type: 'create-invite', roomId: created.roomId });
+    const second = await nextMessage(ws);
+
+    assert.equal(first.token, second.token);
   });
 
   test('create-invite fails if client is not in that room', async () => {
@@ -592,5 +782,45 @@ describe('waiting room and admit system', () => {
 
     assert.ok(peerLeft);
     assert.ok(ownerChanged);
+  });
+
+  test('a second join-request replaces the first, so a disconnected guest can never be admitted', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+
+    const guestWs = await connect();
+    send(guestWs, { type: 'join-request', roomId: created.roomId, name: 'Guest' });
+    send(guestWs, { type: 'join-request', roomId: created.roomId, name: 'Guest' });
+    await nextMessage(guestWs);
+    const second = await nextMessage(guestWs);
+
+    const first = await nextMessage(ownerWs);
+    const cancelled = await nextMessage(ownerWs);
+    await nextMessage(ownerWs); // second admit-request
+    assert.equal(cancelled.type, 'admit-request-cancelled');
+    assert.equal(cancelled.requestId, first.requestId);
+
+    guestWs.terminate();
+    await wait(50);
+    send(ownerWs, { type: 'admit-response', requestId: second.requestId, admitted: true });
+    send(ownerWs, { type: 'admit-response', requestId: first.requestId, admitted: true });
+    await wait(50);
+
+    assert.equal(wss.rooms.get(created.roomId).size, 1);
+  });
+
+  test('only the owner can admit', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+
+    const guestWs = await connect();
+    send(guestWs, { type: 'join-request', roomId: created.roomId, name: 'Guest' });
+    const { requestId } = await nextMessage(guestWs);
+    await nextMessage(ownerWs); // admit-request
+
+    send(memberWs, { type: 'admit-response', requestId, admitted: true });
+    await wait(50);
+
+    assert.equal(guestWs.inbox.length, 0);
+    assert.equal(wss.rooms.get(created.roomId).size, 2);
   });
 });

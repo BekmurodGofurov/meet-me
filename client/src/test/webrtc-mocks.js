@@ -72,9 +72,13 @@ export class FakeRTCPeerConnection {
   }
 
   _makeSender(track = null) {
-    const sender = { track }
-    sender.replaceTrack = vi.fn((t) => {
+    const sender = { track, _params: { encodings: [{}] } }
+    sender.replaceTrack = vi.fn(async (t) => {
       sender.track = t
+    })
+    sender.getParameters = vi.fn(() => structuredClone(sender._params))
+    sender.setParameters = vi.fn(async (params) => {
+      sender._params = params
     })
     return sender
   }
@@ -86,10 +90,19 @@ export class FakeRTCPeerConnection {
     return sender
   }
 
-  addTransceiver(kind, opts = {}) {
-    const sender = this._makeSender(null)
-    const receiver = { track: opts.direction === 'recvonly' ? { kind } : null }
-    const transceiver = { sender, receiver, direction: opts.direction ?? 'sendrecv', currentDirection: null }
+  // Like the real API, accepts either a track or a kind string.
+  addTransceiver(trackOrKind, opts = {}) {
+    const track = typeof trackOrKind === 'string' ? null : trackOrKind
+    const kind = track ? track.kind : trackOrKind
+    const sender = this._makeSender(track)
+    const receiver = { track: { kind } }
+    const transceiver = {
+      sender,
+      receiver,
+      direction: opts.direction ?? 'sendrecv',
+      currentDirection: null,
+      streams: opts.streams ?? [],
+    }
     this._transceivers.push(transceiver)
     // Real WebRTC fires negotiationneeded for this too, not just addTrack.
     queueMicrotask(() => this.onnegotiationneeded?.())
@@ -116,6 +129,10 @@ export class FakeRTCPeerConnection {
   async addIceCandidate(candidate) {
     this._candidates ??= []
     this._candidates.push(candidate)
+  }
+
+  restartIce() {
+    this.restartedIce = true
   }
 
   close() {
