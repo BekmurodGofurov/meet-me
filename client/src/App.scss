@@ -979,6 +979,10 @@ input {
     width: 100%;
   }
 
+  &__chat-grabber {
+    display: none;
+  }
+
   &__chat-wrapper {
     flex-shrink: 0;
 
@@ -1116,13 +1120,29 @@ input {
       }
 
       .room__chat-header {
+        position: relative;
         flex-shrink: 0;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 12px 18px;
+        padding: 16px 18px 12px;
         border-bottom: 1px solid var(--border);
         background: var(--bg-card);
+        // The header is a drag handle: no native scrolling or pull-to-refresh
+        // should start from it (see useSwipeToClose).
+        touch-action: none;
+
+        .room__chat-grabber {
+          display: block;
+          position: absolute;
+          top: 6px;
+          left: 50%;
+          width: 36px;
+          height: 4px;
+          margin-left: -18px;
+          border-radius: 2px;
+          background: var(--border);
+        }
 
         &-title {
           display: flex;
@@ -1573,6 +1593,8 @@ input {
   &__messages {
     flex: 1;
     overflow-y: auto;
+    // Reaching the end of the list must not chain into the page (pull to refresh).
+    overscroll-behavior-y: contain;
     padding: 12px;
     margin: 0;
     list-style: none;

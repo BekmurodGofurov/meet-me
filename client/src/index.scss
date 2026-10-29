@@ -130,6 +130,13 @@ html, body {
   -webkit-text-size-adjust: 100%;
 }
 
+// Set by Room while in a call: a downward swipe on a phone must not reload
+// the page and drop the call.
+html.in-call,
+html.in-call body {
+  overscroll-behavior-y: none;
+}
+
 body {
   margin: 0;
   background-color: var(--bg);

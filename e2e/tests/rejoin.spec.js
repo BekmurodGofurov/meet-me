@@ -66,3 +66,38 @@ test('a rejoin against a room that is genuinely gone falls back to the lobby wit
   await expect(laterPage.getByText('Hi, Bekmurod')).toBeVisible({ timeout: 10000 })
   await laterPage.close()
 })
+
+test('after a reload the chat comes back, and your own messages are still "You"', async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext()
+  const memberContext = await browser.newContext()
+  const owner = new RoomPage(await ownerContext.newPage())
+  const member = new RoomPage(await memberContext.newPage())
+
+  await owner.open()
+  await owner.enterName('Bekmurod')
+  const code = await owner.createRoom()
+  await member.open()
+  await member.enterName('Aziz')
+  await member.joinRoom(code)
+  await owner.admitGuest('Aziz')
+
+  await member.openChat()
+  await owner.sendChat('hello from owner')
+  await expect(member.chatBubble('hello from owner')).toBeVisible()
+  await member.sendChat('hello from member')
+  await expect(owner.chatBubble('hello from member')).toBeVisible()
+
+  await owner.page.reload()
+  await expect(owner.roomCodeText()).toHaveAttribute('data-room-id', code, { timeout: 10000 })
+  await owner.openChat()
+
+  await expect(owner.chatBubble('hello from owner')).toBeVisible()
+  await expect(owner.chatBubble('hello from owner')).toHaveClass(/is-mine/)
+  await expect(owner.chatBubble('hello from member')).toBeVisible()
+  await expect(owner.chatBubble('hello from member')).not.toHaveClass(/is-mine/)
+
+  await ownerContext.close()
+  await memberContext.close()
+})

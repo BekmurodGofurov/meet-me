@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Chat from './Chat'
 import MediaControls from './MediaControls'
 import VideoTile from './VideoTile'
+import useSwipeToClose from '../hooks/useSwipeToClose'
 import { CloseIcon } from './icons'
 import { ChatBubbleIcon } from './FeatureIcons'
 
@@ -24,11 +25,14 @@ export default function Room({
   const [activeToast, setActiveToast] = useState(null)
   const lastMsgCountRef = useRef(messages.length)
   const toastTimeoutRef = useRef(null)
+  const chatPanelRef = useRef(null)
 
   useEffect(() => {
     if (messages.length > lastMsgCountRef.current) {
       const newMsgs = messages.slice(lastMsgCountRef.current)
-      const incoming = newMsgs.filter((m) => m.kind === 'chat' && m.from !== me?.clientId)
+      const incoming = newMsgs.filter(
+        (m) => m.kind === 'chat' && !m.history && m.from !== me?.clientId,
+      )
       if (incoming.length > 0) {
         if (!chatOpen) {
           setUnreadCount((prev) => prev + incoming.length)
@@ -50,6 +54,13 @@ export default function Room({
     }
     lastMsgCountRef.current = messages.length
   }, [messages, chatOpen, me?.clientId])
+
+  // Pulling down on a phone would otherwise reload the page and drop the
+  // call; this class turns the browser's pull-to-refresh off while in a room.
+  useEffect(() => {
+    document.documentElement.classList.add('in-call')
+    return () => document.documentElement.classList.remove('in-call')
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -73,6 +84,8 @@ export default function Room({
   const handleCloseChat = () => {
     setChatOpen(false)
   }
+
+  useSwipeToClose(chatPanelRef, { enabled: chatOpen, onClose: handleCloseChat })
 
   const handleOpenChatFromToast = () => {
     setActiveToast(null)
@@ -254,8 +267,9 @@ export default function Room({
             onClick={handleCloseChat}
             aria-hidden="true"
           />
-          <div className="room__chat-panel">
+          <div className="room__chat-panel" ref={chatPanelRef}>
             <div className="room__chat-header">
+              <span className="room__chat-grabber" aria-hidden="true" />
               <div className="room__chat-header-title">
                 <ChatBubbleIcon width={17} height={17} />
                 <span>In-Call Messages</span>

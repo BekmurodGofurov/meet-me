@@ -348,6 +348,83 @@ describe('chat-message', () => {
     assert.equal(chat.text.length, 500);
     assert.equal(chat.extra, undefined);
   });
+
+  test('someone who reloads gets the earlier chat back, with their own messages still marked as theirs', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs, joined: memberJoined } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+
+    send(ownerWs, { type: 'chat-message', text: 'hello from owner' });
+    await nextMessage(memberWs);
+    send(memberWs, { type: 'chat-message', text: 'hello from member' });
+    await nextMessage(ownerWs);
+
+    ownerWs.close();
+    await wait(20);
+
+    const ws = await connect();
+    send(ws, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Owner' });
+    const response = await nextMessage(ws);
+
+    assert.equal(response.type, 'existing-peers');
+    assert.deepEqual(response.chatHistory, [
+      { from: response.clientId, fromName: 'Owner', text: 'hello from owner' },
+      { from: memberJoined.clientId, fromName: 'Member', text: 'hello from member' },
+    ]);
+    // Not the old connection's id - that is what made "You" turn into "Owner".
+    assert.notEqual(response.clientId, created.clientId);
+  });
+
+  test('a second reload still recognises messages sent before the first one', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    await joinRoom(created.roomId, 'Member', [ownerWs]);
+    send(ownerWs, { type: 'chat-message', text: 'first' });
+    await wait(30);
+    ownerWs.close();
+    await wait(20);
+
+    const second = await connect();
+    send(second, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Owner' });
+    const afterFirst = await nextMessage(second);
+    second.close();
+    await wait(20);
+
+    const third = await connect();
+    send(third, { type: 'join-room', roomId: created.roomId, rejoinToken: afterFirst.rejoinToken, name: 'Owner' });
+    const afterSecond = await nextMessage(third);
+
+    assert.equal(afterSecond.chatHistory.length, 1);
+    assert.equal(afterSecond.chatHistory[0].from, afterSecond.clientId);
+  });
+
+  test('a newly admitted guest starts with an empty chat history', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+    send(ownerWs, { type: 'chat-message', text: 'private to those present' });
+    await nextMessage(memberWs);
+
+    const { joined } = await joinRoom(created.roomId, 'Late', [ownerWs, memberWs]);
+
+    assert.deepEqual(joined.chatHistory, []);
+  });
+
+  test('the history keeps only the most recent 200 messages', async () => {
+    const { ws: ownerWs, created } = await createRoom('Owner');
+    const { ws: memberWs } = await joinRoom(created.roomId, 'Member', [ownerWs]);
+
+    for (let i = 0; i < 150; i += 1) send(ownerWs, { type: 'chat-message', text: `o${i}` });
+    for (let i = 0; i < 150; i += 1) send(memberWs, { type: 'chat-message', text: `m${i}` });
+    await wait(400);
+
+    ownerWs.close();
+    await wait(20);
+    const ws = await connect();
+    send(ws, { type: 'join-room', roomId: created.roomId, rejoinToken: created.rejoinToken, name: 'Owner' });
+    const response = await nextMessage(ws);
+
+    assert.equal(response.chatHistory.length, 200);
+    assert.equal(response.chatHistory[0].text, 'o100');
+    assert.equal(response.chatHistory[199].text, 'm149');
+  });
 });
 
 describe('media-state', () => {
