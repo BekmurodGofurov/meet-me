@@ -411,9 +411,16 @@ describe('chat-message', () => {
     const { ws: ownerWs, created } = await createRoom('Owner');
     const { ws: memberWs } = await joinRoom(created.roomId, 'Member', [ownerWs]);
 
+    // Each side's batch must be fully processed before the other starts, or
+    // the two sockets interleave in a different order on a slow machine.
+    const received = async (ws, count) => {
+      for (let i = 0; i < 100 && ws.inbox.length < count; i += 1) await wait(50);
+      assert.equal(ws.inbox.length, count);
+    };
     for (let i = 0; i < 150; i += 1) send(ownerWs, { type: 'chat-message', text: `o${i}` });
+    await received(memberWs, 150);
     for (let i = 0; i < 150; i += 1) send(memberWs, { type: 'chat-message', text: `m${i}` });
-    await wait(400);
+    await received(ownerWs, 150);
 
     ownerWs.close();
     await wait(20);
