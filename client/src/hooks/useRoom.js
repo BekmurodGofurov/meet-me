@@ -49,6 +49,26 @@ const sameTracks = (a, b) => {
   return aTracks.length === bTracks.length && aTracks.every((track, i) => track === bTracks[i])
 }
 
+const MAX_HISTORY_MESSAGES = 200
+
+// The server sends the room's recent chat when someone comes back after a
+// reload or a dropped connection. It is flagged so the unread badge and the
+// toast don't treat old messages as new ones. Anything malformed is skipped.
+function historyToMessages(history) {
+  if (!Array.isArray(history)) return []
+  return history
+    .filter((entry) => entry && typeof entry.text === 'string' && typeof entry.from === 'string')
+    .slice(-MAX_HISTORY_MESSAGES)
+    .map((entry) => ({
+      id: crypto.randomUUID(),
+      kind: 'chat',
+      history: true,
+      from: entry.from,
+      fromName: typeof entry.fromName === 'string' ? entry.fromName : 'Guest',
+      text: entry.text,
+    }))
+}
+
 export function getWebSocketUrl() {
   let envWsUrl = import.meta.env.VITE_WS_URL
 
@@ -427,7 +447,7 @@ export default function useRoom(tracksRef) {
       setRejoining(false)
       isRejoiningRef.current = false
       setRememberedName(data.name)
-      setMessages([])
+      setMessages(historyToMessages(data.chatHistory))
       setWaitingForAdmit(false)
       waitingRequestIdRef.current = null
       setRoomError('')

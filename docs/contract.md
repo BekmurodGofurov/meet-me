@@ -123,10 +123,21 @@ path — whoever just got added to the room)
   ],
   "ownerId": "c-1a2b3c",
   "rejoinToken": "9e1f…",
-  "iceServers": [{ "urls": ["stun:stun.l.google.com:19302"] }]
+  "iceServers": [{ "urls": ["stun:stun.l.google.com:19302"] }],
+  "chatHistory": [
+    { "from": "c-9f8e7d", "fromName": "Aziz", "text": "hey, can everyone hear me?" },
+    { "from": "c-1a2b3c", "fromName": "Bekmurod", "text": "yes, loud and clear" }
+  ]
 }
 ```
 `ownerId`, `rejoinToken` and `iceServers` mean the same as in `room-created`.
+
+`chatHistory` is the room's most recent chat (at most 200 messages, kept in
+memory until the room is deleted). It is filled only when the client came
+back through `join-room` with a rejoin token (a reload or reconnect); a guest
+admitted through the waiting room gets an empty list, so people never see
+what was said before they arrived. The returning client's own earlier
+messages carry its new `clientId` in `from`, so they still show as theirs.
 `clientId` and `name` here are the new client's own (same purpose as in
 `room-created` — for `join-room` this is where they first learn them,
 since `join-room` itself doesn't return them directly). `roomId` is echoed

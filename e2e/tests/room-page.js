@@ -59,9 +59,13 @@ export class RoomPage {
   // The chat panel is closed until its button is pressed; both desktop and
   // mobile use the same toggle.
   async openChat() {
-    const open = this.page.getByRole('button', { name: /^open chat$/i })
-    if (await open.isVisible()) await open.click()
-    await expect(this.page.getByPlaceholder(/type a message/i)).toBeVisible()
+    const input = this.page.getByPlaceholder(/type a message/i)
+    // click() waits for the button, so this also works right after joining,
+    // before the room has finished rendering.
+    if (!(await input.isVisible())) {
+      await this.page.getByRole('button', { name: /^open chat$/i }).click()
+    }
+    await expect(input).toBeVisible()
   }
 
   async closeChat() {

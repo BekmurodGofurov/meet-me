@@ -522,6 +522,49 @@ describe('chat', () => {
       expect.objectContaining({ kind: 'chat', from: 'peer-1', fromName: 'Bekmurod', text: 'hi' }),
     ])
   })
+  it('existing-peers restores the chat history, flagged so it is not treated as new', async () => {
+    const { result, socket } = await connectAndOpen()
+
+    await act(async () => {
+      socket.receive({
+        type: 'existing-peers',
+        roomId: 'abc123',
+        clientId: 'me-2',
+        name: 'Aziz',
+        peers: [],
+        chatHistory: [
+          { from: 'me-2', fromName: 'Aziz', text: 'my old message' },
+          { from: 'peer-1', fromName: 'Bekmurod', text: 'their reply' },
+        ],
+      })
+    })
+
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({ kind: 'chat', history: true, from: 'me-2', text: 'my old message' }),
+      expect.objectContaining({ kind: 'chat', history: true, from: 'peer-1', fromName: 'Bekmurod' }),
+    ])
+  })
+
+  it('skips malformed history entries and a missing history', async () => {
+    const { result, socket } = await connectAndOpen()
+
+    await act(async () => {
+      socket.receive({
+        type: 'existing-peers',
+        roomId: 'abc123',
+        clientId: 'me-2',
+        name: 'Aziz',
+        peers: [],
+        chatHistory: [null, { from: 'x', text: { evil: true } }, { from: 'peer-1', fromName: 'B', text: 'ok' }],
+      })
+    })
+    expect(result.current.messages).toHaveLength(1)
+
+    await act(async () => {
+      socket.receive({ type: 'room-created', roomId: 'def456', clientId: 'me-3', name: 'Aziz' })
+    })
+    expect(result.current.messages).toEqual([])
+  })
 })
 
 describe('leaveRoom', () => {

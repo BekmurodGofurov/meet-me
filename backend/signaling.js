@@ -4,6 +4,9 @@ import crypto from 'crypto';
 const MAX_ROOM_SIZE = 6;
 const MAX_NAME_LENGTH = 24;
 const MAX_CHAT_LENGTH = 500;
+// How many recent chat messages a room remembers for people who reload or
+// reconnect. Memory only - it goes away with the room.
+const MAX_CHAT_HISTORY = 200;
 const MAX_STREAM_ID_LENGTH = 64;
 
 // SDP for 3 m-lines is a few KB; 64 KB leaves plenty of headroom while
@@ -116,11 +119,17 @@ export function createSignalingServer(
   // Map<requestId, { conn, name, roomId }> - guests waiting to be admitted.
   const pendingRequests = new Map();
 
-  // Map<token, roomId> - proof that a connection was already admitted to a
-  // room. Handed out with room-created / existing-peers and stored by the
-  // client, so a page reload can rejoin directly. Without one, the only way
-  // into a room is join-request -> admit by the owner.
+  // Map<token, { roomId, memberId }> - proof that a connection was already
+  // admitted to a room. Handed out with room-created / existing-peers and
+  // stored by the client, so a page reload can rejoin directly. Without one,
+  // the only way into a room is join-request -> admit by the owner. memberId
+  // stays the same across rejoins (clientId changes on every connection), so
+  // a returning person can be shown which old messages were theirs.
   const rejoinTokens = new Map();
+
+  // Map<roomId, Array<{ memberId, from, fromName, text }>> - the last
+  // MAX_CHAT_HISTORY chat messages of each room.
+  const roomHistory = new Map();
 
   // Map<ip, { count, resetAt }>
   const failedLookups = new Map();
@@ -161,12 +170,13 @@ export function createSignalingServer(
   const deleteRoom = (roomId) => {
     rooms.delete(roomId);
     roomOwners.delete(roomId);
+    roomHistory.delete(roomId);
     roomDeletionTimers.delete(roomId);
     for (const [token, tokenRoomId] of inviteTokens.entries()) {
       if (tokenRoomId === roomId) inviteTokens.delete(token);
     }
-    for (const [token, tokenRoomId] of rejoinTokens.entries()) {
-      if (tokenRoomId === roomId) rejoinTokens.delete(token);
+    for (const [token, grant] of rejoinTokens.entries()) {
+      if (grant.roomId === roomId) rejoinTokens.delete(token);
     }
     console.log(`Room ${roomId} deleted (empty)`);
   };
@@ -225,6 +235,7 @@ export function createSignalingServer(
       clientId: crypto.randomUUID(),
       roomId: null,
       rejoinToken: null,
+      memberId: null,
       pendingRequestId: null,
       tokens: MESSAGE_BURST,
       lastRefill: Date.now(),
@@ -273,6 +284,7 @@ export function createSignalingServer(
       conn.roomId = null;
       if (explicit && conn.rejoinToken) rejoinTokens.delete(conn.rejoinToken);
       conn.rejoinToken = null;
+      conn.memberId = null;
 
       const roomClients = roomId && rooms.get(roomId);
       if (!roomClients) return;
@@ -305,17 +317,18 @@ export function createSignalingServer(
     };
 
     // The one path into a room, used by create, rejoin and admit alike.
-    const addMember = (target, roomId, name) => {
+    const addMember = (target, roomId, name, memberId = crypto.randomUUID()) => {
       const roomClients = rooms.get(roomId);
       cancelRoomDeletion(roomId);
 
       const existingPeers = roster(roomClients, target.clientId);
       const rejoinToken = crypto.randomUUID();
-      rejoinTokens.set(rejoinToken, roomId);
+      rejoinTokens.set(rejoinToken, { roomId, memberId });
 
       roomClients.set(target.clientId, { ws: target.ws, name });
       target.roomId = roomId;
       target.rejoinToken = rejoinToken;
+      target.memberId = memberId;
 
       // An empty room (everyone reloaded / left within the grace period)
       // has no owner - whoever comes back first takes it over, so join
@@ -325,7 +338,11 @@ export function createSignalingServer(
       return { existingPeers, rejoinToken };
     };
 
-    const announceJoin = (target, roomId, name, existingPeers, rejoinToken) => {
+    // chatHistory is only passed for a rejoin: someone coming back sees what
+    // was said while they were away, a brand-new guest starts with a blank
+    // chat. The returning person's own old messages are re-stamped with their
+    // new clientId so they still show up as "You".
+    const announceJoin = (target, roomId, name, existingPeers, rejoinToken, chatHistory = []) => {
       safeSend(target.ws, {
         type: 'existing-peers',
         roomId,
@@ -334,6 +351,11 @@ export function createSignalingServer(
         peers: existingPeers,
         ownerId: roomOwners.get(roomId),
         rejoinToken,
+        chatHistory: chatHistory.map((entry) => ({
+          from: entry.memberId === target.memberId ? target.clientId : entry.from,
+          fromName: entry.fromName,
+          text: entry.text,
+        })),
         iceServers: iceServersFor(target.clientId),
       });
 
@@ -357,6 +379,7 @@ export function createSignalingServer(
         const roomId = generateRoomCode(rooms);
         const name = cleanName(data.name);
         rooms.set(roomId, new Map());
+        roomHistory.set(roomId, []);
         const { rejoinToken } = addMember(conn, roomId, name);
 
         console.log(`Room created: ${roomId} (${clientId})`);
@@ -387,8 +410,8 @@ export function createSignalingServer(
           return;
         }
 
-        const tokenRoomId = typeof data.rejoinToken === 'string' ? rejoinTokens.get(data.rejoinToken) : undefined;
-        if (tokenRoomId !== roomId) {
+        const grant = typeof data.rejoinToken === 'string' ? rejoinTokens.get(data.rejoinToken) : undefined;
+        if (grant?.roomId !== roomId) {
           send({ type: 'error', message: 'Ask the host to let you in' });
           return;
         }
@@ -404,9 +427,9 @@ export function createSignalingServer(
         rejoinTokens.delete(data.rejoinToken);
 
         const name = cleanName(data.name);
-        const { existingPeers, rejoinToken } = addMember(conn, roomId, name);
+        const { existingPeers, rejoinToken } = addMember(conn, roomId, name, grant.memberId);
         console.log(`${clientId} rejoined room ${roomId}`);
-        announceJoin(conn, roomId, name, existingPeers, rejoinToken);
+        announceJoin(conn, roomId, name, existingPeers, rejoinToken, roomHistory.get(roomId) ?? []);
       },
 
       'create-invite': (data) => {
@@ -564,6 +587,12 @@ export function createSignalingServer(
           fromName: roomClients.get(clientId)?.name ?? 'Guest',
           text,
         };
+
+        const history = roomHistory.get(conn.roomId);
+        if (history) {
+          history.push({ memberId: conn.memberId, from: message.from, fromName: message.fromName, text });
+          if (history.length > MAX_CHAT_HISTORY) history.shift();
+        }
         roomClients.forEach((member, peerId) => {
           if (peerId !== clientId) safeSend(member.ws, message);
         });
