@@ -22,6 +22,14 @@
 </p>
 
 <p align="center">
+  <a href="https://hub.xerj.org/contributors/BekmurodGofurov">
+    <img src="https://hub.xerj.org/contributors/BekmurodGofurov/badge.svg" alt="XERJ Corpus Hub contributor" />
+  </a>
+  <br>
+  <sub>Indexed in <b>XERJ Corpus Hub</b> as a reference WebRTC dual-stream implementation for AI coding agents.</sub>
+</p>
+
+<p align="center">
   <a href="https://meet-me.bekmurod.uz" target="_blank" rel="noopener noreferrer"><img src="assets/live-demo.svg" alt="Live Demo" /></a>
   <a href="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml"><img src="https://github.com/BekmurodGofurov/meet-me/actions/workflows/ci.yml/badge.svg" alt="CI/CD Status" /></a>
   <a href="?tab=License-1-ov-file#readme"><img src="https://img.shields.io/badge/license-ISC-blue.svg" alt="Meet-Me is released under the ISC license." /></a>
