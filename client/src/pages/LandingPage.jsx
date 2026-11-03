@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import CallPreview from '../components/CallPreview'
 import Logo from '../components/Logo'
 import ThemeToggle from '../components/ThemeToggle'
 import {
@@ -10,7 +11,7 @@ import {
   LightningIcon,
   CodeBranchIcon,
 } from '../components/FeatureIcons'
-import { LockIcon, FileTextIcon } from '../components/icons'
+import { CheckIcon, LockIcon, FileTextIcon } from '../components/icons'
 
 const FEATURES = [
   {
@@ -39,9 +40,9 @@ const FEATURES = [
   },
   {
     icon: LightningIcon,
-    tag: '< 50ms',
-    title: 'Ultra-Low Latency',
-    desc: 'Direct decentralized peer connections provide natural, zero-delay conversation without centralized transcoding lag.',
+    tag: 'Direct path',
+    title: 'Low Latency',
+    desc: 'Media goes straight between browsers instead of through a central media server, which keeps delay as low as your network allows.',
   },
   {
     icon: CodeBranchIcon,
@@ -69,12 +70,7 @@ const STEPS = [
   },
 ]
 
-const HERO_METRICS = [
-  { value: '< 50ms', label: 'P2P Latency' },
-  { value: '100%', label: 'Browser Encrypted' },
-  { value: '0-Sec', label: 'Setup Time' },
-  { value: '6 Peers', label: 'Mesh Capacity' },
-]
+const HERO_POINTS = ['No account', 'Up to 6 people', 'Screen sharing and chat']
 
 export default function LandingPage() {
   const navigate = useNavigate()
@@ -142,38 +138,43 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="landing__hero">
-        <div className="landing__hero-badge anim-fade-in" style={{ animationDelay: '0.05s' }}>
-          <span className="landing__badge-dot" />
-          <span>WebRTC 2.0 · End-to-End Encrypted · Open Source</span>
+        <div className="landing__hero-copy">
+          <div className="landing__hero-badge anim-fade-in" style={{ animationDelay: '0.05s' }}>
+            <span className="landing__badge-dot" />
+            <span>WebRTC · Peer-to-Peer · Open Source</span>
+          </div>
+
+          <h1 className="landing__hero-title anim-fade-in" style={{ animationDelay: '0.15s' }}>
+            Video calls,<br />
+            <span className="landing__hero-accent">no signup needed.</span>
+          </h1>
+
+          <p className="landing__hero-sub anim-fade-in" style={{ animationDelay: '0.25s' }}>
+            Create a private room, share the link, and talk with up to 6 people.
+            Audio and video go straight from browser to browser.
+          </p>
+
+          <div className="landing__hero-actions anim-fade-in" style={{ animationDelay: '0.35s' }}>
+            <button className="landing__btn-primary" onClick={() => navigate('/lobby?action=create')}>
+              Start a meeting
+            </button>
+            <button className="landing__btn-secondary" onClick={() => navigate('/lobby?action=join')}>
+              Join with a code
+            </button>
+          </div>
+
+          <ul className="landing__hero-points anim-fade-in" style={{ animationDelay: '0.45s' }}>
+            {HERO_POINTS.map((point) => (
+              <li key={point}>
+                <CheckIcon />
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <h1 className="landing__hero-title anim-fade-in" style={{ animationDelay: '0.15s' }}>
-          Video calls,<br />
-          <span className="landing__hero-accent">no signup needed.</span>
-        </h1>
-
-        <p className="landing__hero-sub anim-fade-in" style={{ animationDelay: '0.25s' }}>
-          Create a private room, share the link, and collaborate with up to 6 people.
-          Audio and video flow directly browser-to-browser with ultra-low latency.
-        </p>
-
-        <div className="landing__hero-actions anim-fade-in" style={{ animationDelay: '0.35s' }}>
-          <button className="landing__btn-primary" onClick={() => navigate('/lobby?action=create')}>
-            Start a meeting
-          </button>
-          <button className="landing__btn-secondary" onClick={() => navigate('/lobby?action=join')}>
-            Join with a code
-          </button>
-        </div>
-
-        {/* Hero metrics / trust bar */}
-        <div className="landing__hero-metrics anim-fade-in" style={{ animationDelay: '0.45s' }}>
-          {HERO_METRICS.map((m) => (
-            <div key={m.label} className="landing__metric-item">
-              <span className="landing__metric-val">{m.value}</span>
-              <span className="landing__metric-label">{m.label}</span>
-            </div>
-          ))}
+        <div className="landing__hero-visual anim-fade-in" style={{ animationDelay: '0.3s' }}>
+          <CallPreview />
         </div>
       </section>
 

@@ -239,3 +239,20 @@ export function FileTextIcon(props) {
   )
 }
 
+
+export function PauseIcon(props) {
+  return (
+    <svg {...base} width={18} height={18} aria-hidden="true" {...props}>
+      <line x1="9" y1="6" x2="9" y2="18" />
+      <line x1="15" y1="6" x2="15" y2="18" />
+    </svg>
+  )
+}
+
+export function PlayIcon(props) {
+  return (
+    <svg {...base} width={18} height={18} aria-hidden="true" {...props}>
+      <path d="M8 5.5v13l11-6.5z" />
+    </svg>
+  )
+}

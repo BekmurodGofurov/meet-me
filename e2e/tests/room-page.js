@@ -1,7 +1,8 @@
 import { expect } from '@playwright/test'
 
-// A thin wrapper around the real UI flow (name -> create/join -> in-room
-// controls) so each spec reads as a user journey, not a pile of selectors.
+// A thin wrapper around the real UI flow (lobby: name + create/join on one
+// screen -> in-room controls) so each spec reads as a user journey, not a pile
+// of selectors.
 export class RoomPage {
   constructor(page) {
     this.page = page
@@ -12,8 +13,7 @@ export class RoomPage {
   }
 
   async enterName(name) {
-    await this.page.getByPlaceholder(/name|bekmurod/i).fill(name)
-    await this.page.getByRole('button', { name: /continue/i }).click()
+    await this.page.getByLabel(/your name/i).fill(name)
   }
 
   async createRoom() {
@@ -25,7 +25,6 @@ export class RoomPage {
   }
 
   async joinRoom(code) {
-    await this.page.getByRole('button', { name: /^join a room$/i }).click()
     const boxes = this.page.getByLabel(/room code character/i)
     for (let i = 0; i < code.length; i += 1) {
       await boxes.nth(i).fill(code[i])

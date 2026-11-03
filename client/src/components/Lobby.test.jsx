@@ -7,114 +7,262 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-describe('Lobby - name step', () => {
-  it('asks for a name first when there is no remembered name', () => {
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} />)
-    expect(screen.getByRole('heading', { name: /name/i })).toBeInTheDocument()
+function renderLobby(props = {}) {
+  return render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} {...props} />)
+}
+
+const nameInput = () => screen.getByLabelText(/your name/i)
+const codeBoxes = () => screen.getAllByLabelText(/room code character/i)
+
+describe('Lobby - one screen', () => {
+  it('shows the name field, Create and the code boxes together', () => {
+    renderLobby()
+
+    expect(nameInput()).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create a room/i })).toBeInTheDocument()
+    expect(codeBoxes()).toHaveLength(6)
+    expect(screen.getByRole('button', { name: /^join room$/i })).toBeInTheDocument()
   })
 
-  it('Continue is disabled until a name is typed', async () => {
+  it('prefills the name when one is already remembered', () => {
+    renderLobby({ initialName: 'Aziz' })
+    expect(nameInput()).toHaveValue('Aziz')
+  })
+
+  it('Create is disabled until a name is typed', async () => {
     const user = userEvent.setup()
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} />)
+    renderLobby()
 
-    const button = screen.getByRole('button', { name: /continue/i })
-    expect(button).toBeDisabled()
+    const create = screen.getByRole('button', { name: /create a room/i })
+    expect(create).toBeDisabled()
 
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Aziz')
-    expect(button).toBeEnabled()
+    await user.type(nameInput(), 'Aziz')
+    expect(create).toBeEnabled()
   })
 
-  it('pressing Enter with a name advances to the choice step', async () => {
+  it('treats a whitespace-only name as empty', async () => {
     const user = userEvent.setup()
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} />)
+    renderLobby()
 
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Aziz{Enter}')
-    expect(screen.getByText('Hi, Aziz')).toBeInTheDocument()
+    await user.type(nameInput(), '   ')
+    expect(screen.getByRole('button', { name: /create a room/i })).toBeDisabled()
   })
 
-  it('skips straight to the choice step when a name is already remembered', () => {
-    render(
-      <Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} initialName="Aziz" />,
-    )
-    expect(screen.getByText('Hi, Aziz')).toBeInTheDocument()
+  it('shows a room error if present', () => {
+    renderLobby({ error: 'Room is full' })
+    expect(screen.getByText('Room is full')).toBeInTheDocument()
+  })
+
+  it('shows the connection status when it is provided', () => {
+    renderLobby({ connectionStatus: 'connected' })
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+  })
+
+  it('shows no connection status when none is provided', () => {
+    renderLobby()
+    expect(screen.queryByText(/connect/i)).not.toBeInTheDocument()
   })
 })
 
-describe('Lobby - choice step', () => {
-  async function goToChoice(user, name = 'Aziz') {
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} />)
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), `${name}{Enter}`)
-  }
-
+describe('Lobby - creating a room', () => {
   it('Create a room calls onCreate with the trimmed name', async () => {
     const user = userEvent.setup()
     const onCreate = vi.fn()
-    render(<Lobby onCreate={onCreate} onJoin={() => {}} error="" disabled={false} />)
+    renderLobby({ onCreate })
 
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), '  Aziz  {Enter}')
+    await user.type(nameInput(), '  Aziz  ')
     await user.click(screen.getByRole('button', { name: /create a room/i }))
 
     expect(onCreate).toHaveBeenCalledWith('Aziz')
   })
 
-  it('Create/Join are disabled while disconnected', async () => {
+  it('pressing Enter in the name field creates the room', async () => {
     const user = userEvent.setup()
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled />)
+    const onCreate = vi.fn()
+    renderLobby({ onCreate })
 
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Aziz{Enter}')
+    await user.type(nameInput(), 'Aziz{Enter}')
+
+    expect(onCreate).toHaveBeenCalledWith('Aziz')
+  })
+
+  it('pressing Enter without a name does nothing', async () => {
+    const user = userEvent.setup()
+    const onCreate = vi.fn()
+    renderLobby({ onCreate })
+
+    await user.click(nameInput())
+    await user.keyboard('{Enter}')
+
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
+  it('Create and Join are disabled while disconnected', async () => {
+    const user = userEvent.setup()
+    const onJoin = vi.fn()
+    renderLobby({ disabled: true, initialName: 'Aziz', onJoin })
+
     expect(screen.getByRole('button', { name: /create a room/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^join room$/i })).toBeDisabled()
+
+    await user.click(codeBoxes()[0])
+    await user.keyboard('a5fb67')
+    expect(onJoin).not.toHaveBeenCalled()
   })
 
-  it('Join a room moves to the code step', async () => {
+  it('saves the typed name to localStorage and restores it on the next load', async () => {
     const user = userEvent.setup()
-    await goToChoice(user)
+    const { unmount } = renderLobby()
 
-    await user.click(screen.getByRole('button', { name: /^join a room$/i }))
-    expect(screen.getByText('Enter room code')).toBeInTheDocument()
-  })
+    await user.type(nameInput(), 'Rustam')
+    expect(localStorage.getItem('meet-me:name')).toBe('Rustam')
 
-  it('Change name goes back to the name step', async () => {
-    const user = userEvent.setup()
-    await goToChoice(user)
+    unmount()
 
-    await user.click(screen.getByRole('button', { name: /change name/i }))
-    expect(screen.getByRole('heading', { name: /name/i })).toBeInTheDocument()
-  })
-
-  it('shows a room error if present', async () => {
-    const user = userEvent.setup()
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="Room is full" disabled={false} />)
-
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Aziz{Enter}')
-    expect(screen.getByText('Room is full')).toBeInTheDocument()
+    // Simulating page refresh by rendering Lobby without explicit initialName prop:
+    renderLobby()
+    expect(nameInput()).toHaveValue('Rustam')
   })
 })
 
-describe('Lobby - join step', () => {
+describe('Lobby - joining with a code', () => {
+  it('Join room is disabled until there is a name and a full code', async () => {
+    const user = userEvent.setup()
+    renderLobby()
+    const join = screen.getByRole('button', { name: /^join room$/i })
+
+    expect(join).toBeDisabled()
+
+    await user.type(nameInput(), 'Aziz')
+    expect(join).toBeDisabled()
+
+    await user.click(codeBoxes()[0])
+    await user.keyboard('a5fb6')
+    expect(join).toBeDisabled()
+  })
+
   it('completing the code calls onJoin with the code and name', async () => {
     const user = userEvent.setup()
     const onJoin = vi.fn()
-    render(<Lobby onCreate={() => {}} onJoin={onJoin} error="" disabled={false} />)
+    renderLobby({ onJoin, initialName: 'Aziz' })
 
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Aziz{Enter}')
-    await user.click(screen.getByRole('button', { name: /^join a room$/i }))
-
-    const boxes = screen.getAllByLabelText(/room code character/i)
-    await user.click(boxes[0])
+    await user.click(codeBoxes()[0])
     await user.keyboard('a5fb67')
 
     expect(onJoin).toHaveBeenCalledWith('a5fb67', 'Aziz')
   })
 
-  it('Back returns to the choice step', async () => {
+  it('prefers onRequestJoin over onJoin when both are given', async () => {
     const user = userEvent.setup()
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} />)
+    const onJoin = vi.fn()
+    const onRequestJoin = vi.fn()
+    renderLobby({ onJoin, onRequestJoin, initialName: 'Aziz' })
 
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Aziz{Enter}')
-    await user.click(screen.getByRole('button', { name: /^join a room$/i }))
-    await user.click(screen.getByRole('button', { name: /back/i }))
+    await user.click(codeBoxes()[0])
+    await user.keyboard('a5fb67')
 
-    expect(screen.getByText('Hi, Aziz')).toBeInTheDocument()
+    expect(onRequestJoin).toHaveBeenCalledWith('a5fb67', 'Aziz')
+    expect(onJoin).not.toHaveBeenCalled()
+  })
+
+  it('does not join without a name, and sends focus to the name field instead', async () => {
+    const user = userEvent.setup()
+    const onJoin = vi.fn()
+    renderLobby({ onJoin })
+
+    await user.click(codeBoxes()[0])
+    await user.keyboard('a5fb67')
+
+    expect(onJoin).not.toHaveBeenCalled()
+    expect(nameInput()).toHaveFocus()
+  })
+
+  it('lets the visitor finish the join after typing the name late', async () => {
+    const user = userEvent.setup()
+    const onJoin = vi.fn()
+    renderLobby({ onJoin })
+
+    await user.click(codeBoxes()[0])
+    await user.keyboard('a5fb67')
+    await user.type(nameInput(), 'Aziz')
+    await user.click(screen.getByRole('button', { name: /^join room$/i }))
+
+    expect(onJoin).toHaveBeenCalledWith('a5fb67', 'Aziz')
+  })
+
+  it('pasting an invite link joins with the room id from the link', async () => {
+    const user = userEvent.setup()
+    const onJoin = vi.fn()
+    renderLobby({ onJoin, initialName: 'Aziz' })
+
+    await user.click(codeBoxes()[0])
+    await user.paste('https://meet-me.bekmurod.uz/lobby?action=join&roomId=F54FFE')
+
+    expect(onJoin).toHaveBeenCalledWith('f54ffe', 'Aziz')
+  })
+})
+
+describe('Lobby - landing on the right control', () => {
+  const originalLocation = window.location
+
+  afterEach(() => {
+    window.location = originalLocation
+  })
+
+  function visit(search) {
+    delete window.location
+    window.location = new URL(`http://localhost:5173/lobby${search}`)
+  }
+
+  it('focuses the name field when no name is remembered', () => {
+    visit('?action=create')
+    renderLobby()
+    expect(nameInput()).toHaveFocus()
+  })
+
+  it('focuses Create for ?action=create when the name is remembered, without creating anything', () => {
+    visit('?action=create')
+    const onCreate = vi.fn()
+    renderLobby({ initialName: 'Aziz', onCreate })
+
+    expect(screen.getByRole('button', { name: /create a room/i })).toHaveFocus()
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
+  it('focuses the first code box for ?action=join when the name is remembered', () => {
+    visit('?action=join')
+    renderLobby({ initialName: 'Aziz' })
+    expect(codeBoxes()[0]).toHaveFocus()
+  })
+})
+
+describe('Lobby - camera preview', () => {
+  it('offers no preview button when no media controls are passed', () => {
+    renderLobby()
+    expect(screen.queryByRole('button', { name: /camera preview/i })).not.toBeInTheDocument()
+  })
+
+  it('asks for the camera only when the preview button is pressed', async () => {
+    const user = userEvent.setup()
+    const toggleCamera = vi.fn()
+    renderLobby({ media: { cameraOn: false, toggleCamera } })
+
+    expect(toggleCamera).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /preview your camera/i }))
+    expect(toggleCamera).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the live preview and an off button once the camera is on', () => {
+    renderLobby({ media: { cameraOn: true, stream: {}, toggleCamera: vi.fn() }, initialName: 'Aziz' })
+
+    expect(screen.getByLabelText('Camera preview')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /turn camera preview off/i })).toBeInTheDocument()
+  })
+
+  it('shows a media error from the camera', () => {
+    renderLobby({ media: { cameraOn: false, toggleCamera: vi.fn(), mediaError: 'Camera blocked' } })
+    expect(screen.getByText('Camera blocked')).toBeInTheDocument()
   })
 })
 
@@ -164,28 +312,12 @@ describe('Lobby - invite link with roomId', () => {
     render(<Lobby onJoin={onJoin} error="" disabled={false} />)
 
     // Name input is on the prejoin screen
-    const nameInput = screen.getByPlaceholderText(/name|bekmurod/i)
-    expect(nameInput).toBeInTheDocument()
-    await user.type(nameInput, 'Aziz')
+    const nameField = screen.getByPlaceholderText(/name|bekmurod/i)
+    expect(nameField).toBeInTheDocument()
+    await user.type(nameField, 'Aziz')
 
     const requestBtn = screen.getByRole('button', { name: /request to join room/i })
     await user.click(requestBtn)
     expect(onJoin).toHaveBeenCalledWith('f54ffe', 'Aziz')
-  })
-})
-
-describe('Lobby - localStorage persistence', () => {
-  it('saves typed name to localStorage and restores it on subsequent load', async () => {
-    const user = userEvent.setup()
-    const { unmount } = render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} />)
-
-    await user.type(screen.getByPlaceholderText(/name|bekmurod/i), 'Rustam{Enter}')
-    expect(localStorage.getItem('meet-me:name')).toBe('Rustam')
-
-    unmount()
-
-    // Simulating page refresh by rendering Lobby without explicit initialName prop:
-    render(<Lobby onCreate={() => {}} onJoin={() => {}} error="" disabled={false} />)
-    expect(screen.getByText('Hi, Rustam')).toBeInTheDocument()
   })
 })
