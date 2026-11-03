@@ -121,4 +121,41 @@ describe('CodeInput', () => {
 
     expect(boxes.map((box) => box.value).join('')).toBe('abcdef')
   })
+
+  it('pasting a full invite link extracts the room code from it', async () => {
+    const user = userEvent.setup()
+    const onComplete = vi.fn()
+    render(<ControlledCodeInput onComplete={onComplete} />)
+    const boxes = getBoxes()
+
+    await user.click(boxes[0])
+    await user.paste('https://meet-me.bekmurod.uz/lobby?action=join&roomId=F54FFE')
+
+    expect(boxes.map((box) => box.value).join('')).toBe('f54ffe')
+    expect(onComplete).toHaveBeenCalledWith('f54ffe')
+  })
+
+  it('pasting an invite link with surrounding whitespace still works', async () => {
+    const user = userEvent.setup()
+    render(<ControlledCodeInput onComplete={() => {}} />)
+    const boxes = getBoxes()
+
+    await user.click(boxes[0])
+    await user.paste('  http://localhost:5173/lobby?roomId=a5fb67&action=join \n')
+
+    expect(boxes.map((box) => box.value).join('')).toBe('a5fb67')
+  })
+
+  it('pasting a link without a room id leaves the boxes empty', async () => {
+    const user = userEvent.setup()
+    const onComplete = vi.fn()
+    render(<ControlledCodeInput onComplete={onComplete} />)
+    const boxes = getBoxes()
+
+    await user.click(boxes[0])
+    await user.paste('https://example.com/some/page')
+
+    expect(boxes.map((box) => box.value).join('')).toBe('')
+    expect(onComplete).not.toHaveBeenCalled()
+  })
 })

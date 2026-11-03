@@ -1,9 +1,24 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 
 const LENGTH = 6
 
-export default function CodeInput({ chars, onChange, onComplete }) {
+// People copy the invite link far more often than the bare code, so a pasted
+// `...?roomId=abc123` should fill the boxes just like the code itself would.
+function extractCode(text) {
+  const trimmed = text.trim()
+  const fromLink = trimmed.match(/[?&]roomId=([^&#\s]+)/i)
+  if (fromLink) return fromLink[1].toLowerCase().slice(0, LENGTH)
+  // A link with no room id has nothing usable in it; don't paste "https:".
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return ''
+  return trimmed.toLowerCase().slice(0, LENGTH)
+}
+
+export default function CodeInput({ chars, onChange, onComplete, autoFocus = false }) {
   const inputsRef = useRef([])
+
+  useEffect(() => {
+    if (autoFocus) inputsRef.current[0]?.focus()
+  }, [autoFocus])
 
   const commit = (next) => {
     onChange(next)
@@ -41,7 +56,8 @@ export default function CodeInput({ chars, onChange, onComplete }) {
 
   const handlePaste = (event) => {
     event.preventDefault()
-    const pasted = event.clipboardData.getData('text').trim().toLowerCase().slice(0, LENGTH)
+    const pasted = extractCode(event.clipboardData.getData('text'))
+    if (!pasted) return
     const next = Array.from({ length: LENGTH }, (_, i) => pasted[i] ?? '')
     commit(next)
     inputsRef.current[Math.min(pasted.length, LENGTH - 1)]?.focus()
