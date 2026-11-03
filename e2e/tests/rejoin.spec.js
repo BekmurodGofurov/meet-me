@@ -29,8 +29,8 @@ test('leaving a room forgets it, so a later refresh goes to the lobby, not back 
   await room.leaveRoom()
   await page.reload()
 
-  // Back at the lobby's choice step, name remembered, no auto-rejoin.
-  await expect(page.getByText('Hi, Bekmurod')).toBeVisible()
+  // Back at the lobby with the name remembered, no auto-rejoin.
+  await expect(page.getByLabel(/your name/i)).toHaveValue('Bekmurod')
 })
 
 test('a rejoin against a room that is genuinely gone falls back to the lobby with the name intact', async ({
@@ -63,7 +63,7 @@ test('a rejoin against a room that is genuinely gone falls back to the lobby wit
   )
   await laterPage.reload()
 
-  await expect(laterPage.getByText('Hi, Bekmurod')).toBeVisible({ timeout: 10000 })
+  await expect(laterPage.getByLabel(/your name/i)).toHaveValue('Bekmurod', { timeout: 10000 })
   await laterPage.close()
 })
 

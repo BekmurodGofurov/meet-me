@@ -112,7 +112,7 @@ export default function PreJoin({
             <input
               id="prejoin-name-input"
               autoFocus={!initialName}
-              placeholder="Your name... e.g. Bekmurod"
+              placeholder="Your name"
               value={name}
               maxLength={24}
               onChange={(e) => handleNameChange(e.target.value)}

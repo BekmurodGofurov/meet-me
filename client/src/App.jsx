@@ -79,6 +79,20 @@ export default function App() {
     navigate('/lobby')
   }, [room, navigate])
 
+  const isInviteLink = new URLSearchParams(location.search).has('roomId')
+
+  const lobby = (
+    <Lobby
+      onCreate={room.createRoom}
+      onRequestJoin={room.requestJoin}
+      error={room.roomError}
+      disabled={room.connectionStatus !== 'connected'}
+      initialName={room.rememberedName}
+      media={media}
+      connectionStatus={room.connectionStatus}
+    />
+  )
+
   return (
     <Routes>
       {/* Home / Landing Page */}
@@ -95,7 +109,9 @@ export default function App() {
               <Topbar connectionStatus={room.connectionStatus} roomId={null} />
               <WaitingRoom name={room.rememberedName} onCancel={room.cancelWaiting} />
             </div>
-          ) : (
+          ) : room.rejoining || isInviteLink ? (
+            // The pre-join screen (invite link) and the rejoin notice keep the
+            // centered app shell with its Topbar.
             <div className="app">
               <Topbar connectionStatus={room.connectionStatus} roomId={null} />
               {room.rejoining ? (
@@ -106,16 +122,12 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <Lobby
-                  onCreate={room.createRoom}
-                  onRequestJoin={room.requestJoin}
-                  error={room.roomError}
-                  disabled={room.connectionStatus !== 'connected'}
-                  initialName={room.rememberedName}
-                  media={media}
-                />
+                lobby
               )}
             </div>
+          ) : (
+            // The regular lobby is a full-bleed split screen with its own header.
+            lobby
           )
         }
       />
